@@ -28,6 +28,16 @@ function App() {
     localStorage.setItem('tailor_companies', JSON.stringify(companies));
   }, [orders, companies]);
 
+  const getPageTitle = () => {
+    switch (activeView) {
+      case 'orders': return { title: 'Dashboard', subtitle: 'Overview of orders and statistics' };
+      case 'civil': return { title: 'Customer Orders', subtitle: 'Add new customer measurements' };
+      case 'companies': return { title: 'Company Management', subtitle: 'Manage company accounts' };
+      case 'company-orders': return { title: 'Bulk Orders', subtitle: 'Manage company bulk orders' };
+      default: return { title: 'Dashboard', subtitle: '' };
+    }
+  };
+
   const renderView = () => {
     switch (activeView) {
       case 'orders':
@@ -54,11 +64,26 @@ function App() {
     }
   };
 
+  const { title, subtitle } = getPageTitle();
+
   return (
     <div className="app-container">
       <Sidebar activeView={activeView} setActiveView={setActiveView} />
       <main className="main-content">
-        {renderView()}
+        <header className="page-header">
+          <div>
+            <h1 className="page-title">{title}</h1>
+            <p className="page-subtitle">{subtitle}</p>
+          </div>
+          <div className="header-actions">
+            <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+              {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </span>
+          </div>
+        </header>
+        <div className="page-content">
+          {renderView()}
+        </div>
       </main>
     </div>
   );
