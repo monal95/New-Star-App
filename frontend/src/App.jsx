@@ -1,36 +1,58 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import CivilForm from './components/CivilForm';
 import CompanyList from './components/CompanyList';
-import OrderDashboard from './components/OrderDashboard';
 import CompanyOrders from './components/CompanyOrders';
+import CivilDashboard from './components/CivilDashboard';
+import CompanyDashboard from './components/CompanyDashboard';
+import { ordersAPI } from './services/api';
 
 function App() {
-  const [activeView, setActiveView] = useState('orders');
+  const [activeView, setActiveView] = useState('civil-dashboard');
   const [orders, setOrders] = useState([]);
-  const [companies, setCompanies] = useState([
-    { id: 1, name: 'Rekitt Company', orderCount: 500, status: 'Active' },
-    { id: 2, name: 'Narayanan Hospital', orderCount: 200, status: 'Active' }
-  ]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load data from localStorage
-  useEffect(() => {
-    const savedOrders = localStorage.getItem('tailor_orders');
-    if (savedOrders) setOrders(JSON.parse(savedOrders));
-
-    const savedCompanies = localStorage.getItem('tailor_companies');
-    if (savedCompanies) setCompanies(JSON.parse(savedCompanies));
+  // Fetch orders from API
+  const fetchOrders = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const data = await ordersAPI.getAll();
+      setOrders(data);
+    } catch (error) {
+      console.error('Failed to fetch orders:', error);
+      // Fallback to localStorage if API fails
+      const savedOrders = localStorage.getItem('tailor_orders');
+      if (savedOrders) setOrders(JSON.parse(savedOrders));
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  // Save data to localStorage
+  // Load data on mount
   useEffect(() => {
-    localStorage.setItem('tailor_orders', JSON.stringify(orders));
-    localStorage.setItem('tailor_companies', JSON.stringify(companies));
-  }, [orders, companies]);
+    fetchOrders();
+  }, [fetchOrders]);
+
+  // Update order status via API
+  const updateOrderStatus = async (orderId, newStatus) => {
+    try {
+      await ordersAPI.updateStatus(orderId, newStatus);
+      setOrders(orders.map(order => 
+        (order._id === orderId || order.id === orderId) ? { ...order, status: newStatus } : order
+      ));
+    } catch (error) {
+      console.error('Failed to update status:', error);
+      // Fallback to local update
+      setOrders(orders.map(order => 
+        (order._id === orderId || order.id === orderId) ? { ...order, status: newStatus } : order
+      ));
+    }
+  };
 
   const getPageTitle = () => {
     switch (activeView) {
-      case 'orders': return { title: 'Dashboard', subtitle: 'Overview of orders and statistics' };
+      case 'civil-dashboard': return { title: 'Civil Dashboard', subtitle: 'Customer orders analytics and management' };
+      case 'company-dashboard': return { title: 'Company Dashboard', subtitle: 'Company-wise orders and analytics' };
       case 'civil': return { title: 'Customer Orders', subtitle: 'Add new customer measurements' };
       case 'companies': return { title: 'Company Management', subtitle: 'Manage company accounts' };
       case 'company-orders': return { title: 'Bulk Orders', subtitle: 'Manage company bulk orders' };
@@ -40,27 +62,14 @@ function App() {
 
   const renderView = () => {
     switch (activeView) {
-      case 'orders':
-        return <OrderDashboard orders={orders} companies={companies} />;
+      case 'civil-dashboard':
+        return <CivilDashboard orders={orders} updateOrderStatus={updateOrderStatus} refreshOrders={fetchOrders} />;
+      case 'company-dashboard':
+        return <CompanyDashboard refreshOrders={fetchOrders} />;
       case 'civil':
-        return <CivilForm addOrder={(order) => setOrders([...orders, order])} />;
-      case 'companies':
-        return (
-          <CompanyList
-            companies={companies}
-            addCompany={(c) => setCompanies([...companies, { ...c, id: Date.now() }])}
-            removeCompany={(id) => setCompanies(companies.filter(c => c.id !== id))}
-          />
-        );
-      case 'company-orders':
-        return (
-          <CompanyOrders
-            companies={companies}
-            addOrder={(order) => setOrders([...orders, order])}
-          />
-        );
+        return <CivilForm addOrder={(order) => setOrders([...orders, order])} refreshOrders={fetchOrders} />;
       default:
-        return <OrderDashboard orders={orders} companies={companies} />;
+        return <CivilDashboard orders={orders} updateOrderStatus={updateOrderStatus} refreshOrders={fetchOrders} />;
     }
   };
 

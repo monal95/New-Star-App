@@ -1,12 +1,11 @@
 import React from 'react';
-import { LayoutDashboard, Users, Building2, ClipboardList, Scissors, Settings, HelpCircle } from 'lucide-react';
+import { Users, Scissors, UserCircle, Building } from 'lucide-react';
 
 const Sidebar = ({ activeView, setActiveView }) => {
     const navItems = [
-        { id: 'orders', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'civil-dashboard', label: 'Civil Dashboard', icon: UserCircle },
+        { id: 'company-dashboard', label: 'Company Dashboard', icon: Building },
         { id: 'civil', label: 'Customer Orders', icon: Users },
-        { id: 'companies', label: 'Companies', icon: Building2 },
-        { id: 'company-orders', label: 'Bulk Orders', icon: ClipboardList },
     ];
 
     return (

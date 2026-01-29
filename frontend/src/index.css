@@ -377,6 +377,140 @@ tr:hover td {
   }
 }
 
+/* Modal Styles */
+.modal-overlay {
+  @apply fixed inset-0 bg-black/50 flex items-center justify-center z-50;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  @apply bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden;
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-header {
+  @apply flex items-center justify-between p-6 border-b border-gray-200;
+}
+
+.modal-header h3 {
+  @apply text-xl font-bold text-royal-900;
+}
+
+.modal-close {
+  @apply p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-gray-700;
+}
+
+.modal-body {
+  @apply p-6 overflow-y-auto max-h-[calc(90vh-80px)];
+}
+
+/* Pie Chart Container */
+.pie-chart-container {
+  @apply flex flex-col items-center justify-center py-8;
+}
+
+.pie-chart {
+  @apply relative w-64 h-64;
+}
+
+.pie-chart-legend {
+  @apply flex gap-8 mt-8;
+}
+
+.legend-item {
+  @apply flex items-center gap-3;
+}
+
+.legend-color {
+  @apply w-4 h-4 rounded-full;
+}
+
+.legend-text {
+  @apply text-sm text-gray-600;
+}
+
+.legend-value {
+  @apply text-lg font-bold text-royal-900;
+}
+
+/* Dashboard Specific Styles */
+.dashboard-filter {
+  @apply flex items-center gap-3 bg-white rounded-lg p-2 shadow-sm border border-gray-200;
+}
+
+.filter-select {
+  @apply px-4 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-royal-500 focus:border-royal-500 transition-all;
+}
+
+.clickable-card {
+  @apply cursor-pointer transition-all duration-200 hover:shadow-lg hover:-translate-y-1;
+}
+
+.clickable-card.active {
+  @apply ring-2 ring-royal-500 ring-offset-2;
+}
+
+/* Company Selector */
+.company-selector {
+  @apply bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6;
+}
+
+.company-cards-grid {
+  @apply grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-4;
+}
+
+.company-card {
+  @apply p-4 rounded-lg border-2 border-gray-200 cursor-pointer transition-all hover:border-royal-500 hover:bg-royal-50;
+}
+
+.company-card.selected {
+  @apply border-royal-600 bg-royal-50;
+}
+
+.company-card-name {
+  @apply font-semibold text-gray-900;
+}
+
+.company-card-orders {
+  @apply text-sm text-gray-500 mt-1;
+}
+
+/* Measurements Display */
+.measurements-grid {
+  @apply grid grid-cols-2 gap-4;
+}
+
+.measurement-item {
+  @apply flex justify-between py-2 px-3 bg-gray-50 rounded-lg;
+}
+
+.measurement-label {
+  @apply text-gray-600 text-sm;
+}
+
+.measurement-value {
+  @apply font-semibold text-royal-900;
+}
+
+.measurement-section {
+  @apply mb-6;
+}
+
+.measurement-section-title {
+  @apply text-lg font-semibold text-royal-800 mb-3 pb-2 border-b border-gray-200;
+}
+
 @media (max-width: 768px) {
   .sidebar {
     @apply w-16;
@@ -408,6 +542,15 @@ tr:hover td {
     @apply grid-cols-1;
   }
   .form-grid {
+    @apply grid-cols-1;
+  }
+  .modal-content {
+    @apply mx-2 max-w-full;
+  }
+  .pie-chart {
+    @apply w-48 h-48;
+  }
+  .company-cards-grid {
     @apply grid-cols-1;
   }
 }
