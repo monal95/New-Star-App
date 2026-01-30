@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
     Building2, Clock, CheckCircle, X, Shirt, PanelBottom, Eye, Plus, Save, Calendar,
-    Users, ShieldCheck, UserCog, Briefcase, UserCheck, Home, ArrowLeft, Phone, Mail, MapPin
+    Users, ShieldCheck, UserCog, Briefcase, UserCheck, Home, ArrowLeft, Phone, Mail, MapPin, Check, XCircle
 } from 'lucide-react';
 import { companiesAPI, employeesAPI } from '../services/api';
 
@@ -126,6 +126,7 @@ const CompanyDashboard = ({ refreshOrders }) => {
     const stats = useMemo(() => {
         const total = filteredByTime.length;
         const pending = filteredByTime.filter(o => o.status === 'Pending' || o.status === 'In Progress').length;
+        const movedToStitching = filteredByTime.filter(o => o.status === 'Moved to Stitching').length;
         const completed = filteredByTime.filter(o => o.status === 'Delivered' || o.status === 'Completed').length;
         
         // Count by position
@@ -134,7 +135,7 @@ const CompanyDashboard = ({ refreshOrders }) => {
             positionCounts[pos] = filteredByTime.filter(e => e.position === pos).length;
         });
 
-        return { total, pending, completed, ...positionCounts };
+        return { total, pending, movedToStitching, completed, ...positionCounts };
     }, [filteredByTime]);
 
     // Filter for display based on active filter
@@ -145,6 +146,8 @@ const CompanyDashboard = ({ refreshOrders }) => {
             filtered = filtered.filter(o => o.status === 'Pending' || o.status === 'In Progress');
         } else if (activeFilter === 'completed') {
             filtered = filtered.filter(o => o.status === 'Delivered' || o.status === 'Completed');
+        } else if (activeFilter === 'Moved to Stitching') {
+            filtered = filtered.filter(o => o.status === 'Moved to Stitching');
         } else if (Object.keys(POSITION_CONFIG).includes(activeFilter)) {
             filtered = filtered.filter(o => o.position === activeFilter);
         }
@@ -200,7 +203,7 @@ const CompanyDashboard = ({ refreshOrders }) => {
     // Company form handlers
     const handleCompanyInputChange = (e) => {
         const { name, value } = e.target;
-        setCompanyForm(prev => ({ ...prev, [name]: value }));
+        setCompanyForm(prev => ({...prev, [name]: value }));
     };
 
     const handleAddCompany = async (e) => {
@@ -383,7 +386,7 @@ const CompanyDashboard = ({ refreshOrders }) => {
                     style={{
                         position: 'fixed',
                         bottom: '2rem',
-                        left: '50%',
+                        left: '60%',
                         transform: 'translateX(-50%)',
                         backgroundColor: '#1e3a8a',
                         color: 'white',
@@ -592,10 +595,17 @@ const CompanyDashboard = ({ refreshOrders }) => {
                     </div>
                     <div className="stat-icon warning"><Clock size={24} /></div>
                 </div>
-                <div className="stat-card" style={{ cursor: 'pointer', border: activeFilter === 'completed' ? '2px solid #16a34a' : undefined }} onClick={() => handleCardClick('completed')}>
+                <div className="stat-card" style={{ cursor: 'pointer', border: activeFilter === 'Moved to Stitching' ? '2px solid #9333ea' : undefined }} onClick={() => handleCardClick('Moved to Stitching')}>
                     <div className="stat-info">
-                        <h3>Completed Orders</h3>
-                        <p className="stat-value">{stats.completed}</p>
+                        <h3>Garment Moved to Stitching</h3>
+                        <p className="stat-value">{stats.movedToStitching}</p>
+                    </div>
+                    <div className="stat-icon success"><CheckCircle size={24} /></div>
+                </div>
+                <div className="stat-card" style={{ cursor: 'pointer', backgroundColor: '#f0fdf4', border: '2px solid #16a34a' }}>
+                    <div className="stat-info">
+                        <h3>Out of Completed Orders</h3>
+                        <p className="stat-value" style={{ fontSize: '1.25rem' }}>{stats.completed}/{stats.total}</p>
                     </div>
                     <div className="stat-icon success"><CheckCircle size={24} /></div>
                 </div>
@@ -707,22 +717,109 @@ const CompanyDashboard = ({ refreshOrders }) => {
                                                 </button>
                                             </td>
                                             <td>
-                                                <span className={`badge ${order.status === 'Delivered' || order.status === 'Completed' ? 'badge-success' : order.status === 'In Progress' ? 'badge-info' : 'badge-warning'}`}>
+                                                <span className={`badge ${order.status === 'Delivered' || order.status === 'Moved to stitching' ? 'badge-success' : order.status === 'In Progress' ? 'badge-info' : 'badge-warning'}`}>
                                                     {order.status}
                                                 </span>
                                             </td>
                                             <td>
-                                                <select
-                                                    value={order.status}
-                                                    onChange={(e) => handleStatusChange(order._id, e.target.value)}
-                                                    className="form-input"
-                                                    style={{ padding: '0.5rem', minWidth: '130px' }}
-                                                >
-                                                    <option value="Pending">Pending</option>
-                                                    <option value="In Progress">In Progress</option>
-                                                    <option value="Completed">Completed</option>
-                                                    <option value="Delivered">Delivered</option>
-                                                </select>
+                                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                    <button 
+                                                        onClick={() => handleStatusChange(order._id, 'Moved to Stitching')}
+                                                        style={{
+                                                            padding: '0.5rem 0.75rem',
+                                                            backgroundColor: order.status === 'Moved to Stitching' || order.status === 'Delivered' ? '#16a34a' : '#e2e8f0',
+                                                            color: order.status === 'Moved to Stitching' || order.status === 'Delivered' ? 'white' : '#64748b',
+                                                            border: 'none',
+                                                            borderRadius: '6px',
+                                                            cursor: 'pointer',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '0.25rem',
+                                                            fontSize: '0.875rem',
+                                                            fontWeight: '600',
+                                                            transition: 'all 0.2s ease'
+                                                        }}
+                                                        onMouseEnter={e => {
+                                                            if (order.status !== 'Moved to Stitching' && order.status !== 'Delivered') {
+                                                                e.currentTarget.style.backgroundColor = '#dcfce7';
+                                                                e.currentTarget.style.color = '#16a34a';
+                                                            }
+                                                        }}
+                                                        onMouseLeave={e => {
+                                                            if (order.status !== 'Moved to Stitching' && order.status !== 'Delivered') {
+                                                                e.currentTarget.style.backgroundColor = '#e2e8f0';
+                                                                e.currentTarget.style.color = '#64748b';
+                                                            }
+                                                        }}
+                                                    >
+                                                        <Check size={16} />
+                                                       
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleStatusChange(order._id, 'Pending')}
+                                                        style={{
+                                                            padding: '0.5rem 0.75rem',
+                                                            backgroundColor: order.status === 'Pending' ? '#ef4444' : '#e2e8f0',
+                                                            color: order.status === 'Pending' ? 'white' : '#64748b',
+                                                            border: 'none',
+                                                            borderRadius: '6px',
+                                                            cursor: 'pointer',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '0.25rem',
+                                                            fontSize: '0.875rem',
+                                                            fontWeight: '600',
+                                                            transition: 'all 0.2s ease'
+                                                        }}
+                                                        onMouseEnter={e => {
+                                                            if (order.status !== 'Pending') {
+                                                                e.currentTarget.style.backgroundColor = '#fee2e2';
+                                                                e.currentTarget.style.color = '#ef4444';
+                                                            }
+                                                        }}
+                                                        onMouseLeave={e => {
+                                                            if (order.status !== 'Pending') {
+                                                                e.currentTarget.style.backgroundColor = '#e2e8f0';
+                                                                e.currentTarget.style.color = '#64748b';
+                                                            }
+                                                        }}
+                                                    >
+                                                        <XCircle size={16} />
+                                                        
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleStatusChange(order._id, 'Completed')}
+                                                        style={{
+                                                            padding: '0.5rem 0.75rem',
+                                                            backgroundColor: order.status === 'Completed' || order.status === 'Delivered' ? '#3b82f6' : '#e2e8f0',
+                                                            color: order.status === 'Completed' || order.status === 'Delivered' ? 'white' : '#64748b',
+                                                            border: 'none',
+                                                            borderRadius: '6px',
+                                                            cursor: 'pointer',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '0.25rem',
+                                                            fontSize: '0.875rem',
+                                                            fontWeight: '600',
+                                                            transition: 'all 0.2s ease'
+                                                        }}
+                                                        onMouseEnter={e => {
+                                                            if (order.status !== 'Completed' && order.status !== 'Delivered') {
+                                                                e.currentTarget.style.backgroundColor = '#dbeafe';
+                                                                e.currentTarget.style.color = '#3b82f6';
+                                                            }
+                                                        }}
+                                                        onMouseLeave={e => {
+                                                            if (order.status !== 'Completed' && order.status !== 'Delivered') {
+                                                                e.currentTarget.style.backgroundColor = '#e2e8f0';
+                                                                e.currentTarget.style.color = '#64748b';
+                                                            }
+                                                        }}
+                                                    >
+                                                        <CheckCircle size={16} />
+                                                        Stich Completed
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))

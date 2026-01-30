@@ -19,8 +19,26 @@ router.get('/', async (req, res) => {
 router.get('/civil', async (req, res) => {
     try {
         const db = getDB();
+        const { date } = req.query;
+        
+        let query = { companyId: { $exists: false } };
+        
+        // If date is provided, filter by that specific date
+        if (date) {
+            query.date = date;
+        } else {
+            // Otherwise, get current month's orders
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const monthPrefix = `${year}-${month}`;
+            
+            // Filter orders from current month
+            query.date = { $regex: `^${monthPrefix}` };
+        }
+        
         const orders = await db.collection('orders')
-            .find({ companyId: { $exists: false } })
+            .find(query)
             .sort({ createdAt: -1 })
             .toArray();
         res.json(orders);
@@ -28,7 +46,7 @@ router.get('/civil', async (req, res) => {
         console.error('Error fetching civil orders:', error);
         res.status(500).json({ error: 'Failed to fetch civil orders' });
     }
-});
+});});
 
 // Get single order by ID
 router.get('/:id', async (req, res) => {
@@ -188,19 +206,58 @@ router.delete('/:id', async (req, res) => {
 router.get('/generate/next-id', async (req, res) => {
     try {
         const db = getDB();
-        const lastOrder = await db.collection('orders')
-            .find({})
-            .sort({ createdAt: -1 })
-            .limit(1)
-            .toArray();
-
+        
+        // Get current month and year
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1; // 1-12
+        const currentYear = now.getFullYear();
+        const currentMonthKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+        
+        // Check if we need to reset for new month
+        const counterCollection = db.collection('order_counters');
+        const counter = await counterCollection.findOne({ _id: 'order_counter' });
+        
         let nextId = 'ORD001';
-        if (lastOrder.length > 0 && lastOrder[0].orderId) {
-            const lastNum = parseInt(lastOrder[0].orderId.replace('ORD', '')) || 0;
-            nextId = `ORD${String(lastNum + 1).padStart(3, '0')}`;
+        let shouldReset = false;
+        
+        if (!counter) {
+            // First time initialization
+            await counterCollection.insertOne({
+                _id: 'order_counter',
+                lastMonth: currentMonthKey,
+                count: 0,
+                lastResetDate: new Date()
+            });
+        } else if (counter.lastMonth !== currentMonthKey) {
+            // New month detected - reset counter
+            shouldReset = true;
+            await counterCollection.updateOne(
+                { _id: 'order_counter' },
+                { 
+                    $set: { 
+                        lastMonth: currentMonthKey,
+                        count: 0,
+                        lastResetDate: new Date()
+                    }
+                }
+            );
         }
-
-        res.json({ nextId });
+        
+        // Get the next ID
+        const updatedCounter = await counterCollection.findOneAndUpdate(
+            { _id: 'order_counter' },
+            { $inc: { count: 1 } },
+            { returnDocument: 'after' }
+        );
+        
+        const nextNum = updatedCounter.value.count;
+        nextId = `ORD${String(nextNum).padStart(3, '0')}`;
+        
+        res.json({ 
+            nextId,
+            monthReset: shouldReset,
+            currentMonth: currentMonthKey
+        });
     } catch (error) {
         console.error('Error generating order ID:', error);
         res.status(500).json({ error: 'Failed to generate order ID' });

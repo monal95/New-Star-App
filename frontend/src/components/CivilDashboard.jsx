@@ -224,9 +224,22 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
     };
 
     // Handle date selection
-    const handleDateChange = (e) => {
-        setSelectedDate(e.target.value);
+    const handleDateChange = async (e) => {
+        const selectedDateValue = e.target.value;
+        setSelectedDate(selectedDateValue);
         setTimePeriod(''); // Clear time period when specific date is selected
+        
+        // Fetch orders for the selected date from database
+        if (selectedDateValue && refreshOrders) {
+            try {
+                const ordersForDate = await ordersAPI.getCivil(selectedDateValue);
+                // The refreshOrders callback should update the parent component's orders state
+                // For now, we'll rely on the parent to handle the database fetch
+                refreshOrders();
+            } catch (error) {
+                console.error('Failed to fetch orders for date:', error);
+            }
+        }
     };
 
     // Clear date filter

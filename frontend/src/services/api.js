@@ -10,8 +10,12 @@ export const ordersAPI = {
     },
 
     // Get civil orders only
-    getCivil: async () => {
-        const response = await fetch(`${API_BASE_URL}/orders/civil`);
+    getCivil: async (date = null) => {
+        let url = `${API_BASE_URL}/orders/civil`;
+        if (date) {
+            url += `?date=${date}`;
+        }
+        const response = await fetch(url);
         if (!response.ok) throw new Error('Failed to fetch civil orders');
         return response.json();
     },

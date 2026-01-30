@@ -117,7 +117,7 @@ router.patch('/:id/status', async (req, res) => {
             return res.status(400).json({ error: 'Status is required' });
         }
 
-        const validStatuses = ['Pending', 'In Progress', 'Ready', 'Delivered', 'Completed'];
+        const validStatuses = ['Pending', 'In Progress', 'Ready', 'Delivered', 'Completed', 'Moved to Stitching'];
         if (!validStatuses.includes(status)) {
             return res.status(400).json({ error: 'Invalid status' });
         }

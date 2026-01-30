@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import CivilForm from './components/CivilForm';
-import CompanyList from './components/CompanyList';
-import CompanyOrders from './components/CompanyOrders';
 import CivilDashboard from './components/CivilDashboard';
 import CompanyDashboard from './components/CompanyDashboard';
 import { ordersAPI } from './services/api';
