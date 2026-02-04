@@ -17,7 +17,7 @@ const POSITION_CONFIG = {
     'Other': { label: 'Other', icon: Users, color: '#64748b' }
 };
 
-const CompanyDashboard = ({ refreshOrders }) => {
+const CompanyDashboard = () => {
     // View states
     const [view, setView] = useState('companies'); // companies, company-detail
     const [selectedCompany, setSelectedCompany] = useState(null);
@@ -252,7 +252,7 @@ const CompanyDashboard = ({ refreshOrders }) => {
         try {
             const response = await employeesAPI.getNextId(selectedCompany._id);
             setOrderForm(prev => ({ ...prev, orderId: response.nextId }));
-        } catch (error) {
+        } catch {
             const timestamp = Date.now().toString().slice(-6);
             setOrderForm(prev => ({ ...prev, orderId: `EMP${timestamp}` }));
         }

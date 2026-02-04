@@ -8,27 +8,31 @@ import { ordersAPI } from './services/api';
 function App() {
   const [activeView, setActiveView] = useState('civil-dashboard');
   const [orders, setOrders] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch orders from API
+  // Fetch civil orders from API (current month only)
   const fetchOrders = useCallback(async () => {
     try {
-      setIsLoading(true);
-      const data = await ordersAPI.getAll();
+      // Fetch civil orders for current month from backend
+      const data = await ordersAPI.getCivil();
       setOrders(data);
     } catch (error) {
       console.error('Failed to fetch orders:', error);
       // Fallback to localStorage if API fails
       const savedOrders = localStorage.getItem('tailor_orders');
       if (savedOrders) setOrders(JSON.parse(savedOrders));
-    } finally {
-      setIsLoading(false);
     }
   }, []);
 
   // Load data on mount
   useEffect(() => {
-    fetchOrders();
+    let isMounted = true;
+    const loadOrders = async () => {
+      if (isMounted) {
+        await fetchOrders();
+      }
+    };
+    loadOrders();
+    return () => { isMounted = false; };
   }, [fetchOrders]);
 
   // Update order status via API

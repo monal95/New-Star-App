@@ -1,8 +1,11 @@
-import React, { useState, useMemo } from 'react';
-import { Users, Clock, CheckCircle, IndianRupee, X, Shirt, PanelBottom, Eye, Plus, Save, Calendar } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Users, Clock, CheckCircle, IndianRupee, X, Shirt, PanelBottom, Eye, Plus, Save, Calendar, AlertCircle } from 'lucide-react';
 import { ordersAPI } from '../services/api';
 
 const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
+    // Month refresh tracking
+    const [monthRefreshNotice, setMonthRefreshNotice] = useState('');
+    const [dateFilteredOrders, setDateFilteredOrders] = useState(null);
     const [timePeriod, setTimePeriod] = useState('all');
     const [selectedDate, setSelectedDate] = useState('');
     const [activeFilter, setActiveFilter] = useState('all'); // all, pending, completed
@@ -41,12 +44,56 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
         }
     });
 
+    // Check for month boundary and reset order IDs
+    useEffect(() => {
+        const checkMonthReset = async () => {
+            try {
+                // Get next ID which will also check for month reset
+                const response = await ordersAPI.getNextId();
+                
+                if (response.monthReset) {
+                    setMonthRefreshNotice(`✓ New month detected! Orders for ${response.currentMonth} have been reset. Order ID counter reset to ORD001`);
+                    setTimeout(() => setMonthRefreshNotice(''), 5000);
+                    
+                    // Refresh orders when month changes
+                    if (refreshOrders) {
+                        refreshOrders();
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking month reset:', error);
+            }
+        };
+        
+        checkMonthReset();
+    }, [refreshOrders]);
+
+    // Handle date-based filtering - fetch from database
+    const handleDateChange = async (e) => {
+        const selectedDateValue = e.target.value;
+        setSelectedDate(selectedDateValue);
+        setTimePeriod(''); // Clear time period when specific date is selected
+        
+        // Fetch orders for the selected date from database
+        if (selectedDateValue) {
+            try {
+                const dbOrders = await ordersAPI.getCivil(selectedDateValue);
+                setDateFilteredOrders(dbOrders);
+            } catch (error) {
+                console.error('Failed to fetch orders for date:', error);
+                setDateFilteredOrders([]);
+            }
+        } else {
+            setDateFilteredOrders(null);
+        }
+    };
+
     // Generate Order ID when modal opens
     const generateOrderId = async () => {
         try {
             const response = await ordersAPI.getNextId();
             setFormData(prev => ({ ...prev, orderId: response.nextId }));
-        } catch (error) {
+        } catch {
             // Fallback to timestamp-based ID
             const timestamp = Date.now().toString().slice(-6);
             setFormData(prev => ({ ...prev, orderId: `ORD${timestamp}` }));
@@ -130,8 +177,13 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
 
     // Filter only civil orders (orders without companyId)
     const civilOrders = useMemo(() => {
+        // If date-filtered orders are available, use those
+        if (selectedDate && dateFilteredOrders !== null) {
+            return dateFilteredOrders.filter(order => !order.companyId);
+        }
+        // Otherwise use the orders from parent component
         return orders.filter(order => !order.companyId);
-    }, [orders]);
+    }, [orders, selectedDate, dateFilteredOrders]);
 
     // Filter orders by time period or specific date
     const filteredByTime = useMemo(() => {
@@ -223,33 +275,33 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
         setShowMeasurementsModal(true);
     };
 
-    // Handle date selection
-    const handleDateChange = async (e) => {
-        const selectedDateValue = e.target.value;
-        setSelectedDate(selectedDateValue);
-        setTimePeriod(''); // Clear time period when specific date is selected
-        
-        // Fetch orders for the selected date from database
-        if (selectedDateValue && refreshOrders) {
-            try {
-                const ordersForDate = await ordersAPI.getCivil(selectedDateValue);
-                // The refreshOrders callback should update the parent component's orders state
-                // For now, we'll rely on the parent to handle the database fetch
-                refreshOrders();
-            } catch (error) {
-                console.error('Failed to fetch orders for date:', error);
-            }
-        }
-    };
-
     // Clear date filter
     const clearDateFilter = () => {
         setSelectedDate('');
         setTimePeriod('all');
+        setDateFilteredOrders(null);
     };
 
     return (
         <div>
+            {/* Month Refresh Notice */}
+            {monthRefreshNotice && (
+                <div style={{
+                    padding: '1rem',
+                    marginBottom: '1rem',
+                    backgroundColor: '#dcfce7',
+                    color: '#166534',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    border: '1px solid #86efac'
+                }}>
+                    <AlertCircle size={20} />
+                    <span>{monthRefreshNotice}</span>
+                </div>
+            )}
+            
             {/* Time Period Filter */}
             <div className="card mb-4">
                 <div className="card-body" style={{ padding: '1rem 1.5rem' }}>
