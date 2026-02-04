@@ -18,7 +18,7 @@ The frontend is a single-page application (SPA) that provides an intuitive inter
 ## Prerequisites
 
 - Node.js (v16 or higher)
-- npm or yarn package manager
+- npm or yarn package managers.
 
 ## Installation
 
