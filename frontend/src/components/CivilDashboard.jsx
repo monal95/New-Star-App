@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Users, Clock, CheckCircle, IndianRupee, X, Shirt, PanelBottom, Eye, Plus, Save, Calendar, AlertCircle } from 'lucide-react';
 import { ordersAPI } from '../services/api';
+import Toast from './Toast';
 
 const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
     // Month refresh tracking
@@ -15,6 +16,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
     const [selectedOrder, setSelectedOrder] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
+    const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
     // Create Order Form State
     const [formData, setFormData] = useState({
@@ -160,9 +162,10 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
             await ordersAPI.create(formData);
             handleCloseCreateModal();
             if (refreshOrders) refreshOrders();
-            alert('Order created successfully!');
+            setToast({ show: true, message: 'Order Created', type: 'success' });
         } catch (error) {
             setFormError(error.message || 'Failed to create order');
+            setToast({ show: true, message: 'Order Not Stored', type: 'error' });
         } finally {
             setIsSubmitting(false);
         }
@@ -284,6 +287,15 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
 
     return (
         <div>
+            {/* Toast Notification */}
+            {toast.show && (
+                <Toast
+                    message={toast.message}
+                    type={toast.type}
+                    onClose={() => setToast({ ...toast, show: false })}
+                />
+            )}
+
             {/* Month Refresh Notice */}
             {monthRefreshNotice && (
                 <div style={{

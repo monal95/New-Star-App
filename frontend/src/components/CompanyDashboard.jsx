@@ -4,6 +4,7 @@ import {
     Users, ShieldCheck, UserCog, Briefcase, UserCheck, Home, ArrowLeft, Phone, Mail, MapPin, Check, XCircle
 } from 'lucide-react';
 import { companiesAPI, employeesAPI } from '../services/api';
+import Toast from './Toast';
 
 // Position types with icons
 const POSITION_CONFIG = {
@@ -41,6 +42,7 @@ const CompanyDashboard = () => {
     // Form states
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
+    const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
     
     // Company form
     const [companyForm, setCompanyForm] = useState({
@@ -292,8 +294,10 @@ const CompanyDashboard = () => {
             });
             handleCloseOrderModal();
             fetchEmployees(selectedCompany._id);
+            setToast({ show: true, message: 'Order Created', type: 'success' });
         } catch (error) {
             setFormError(error.message || 'Failed to create order');
+            setToast({ show: true, message: 'Order Not Stored', type: 'error' });
         } finally {
             setIsSubmitting(false);
         }
@@ -303,6 +307,15 @@ const CompanyDashboard = () => {
     if (view === 'companies') {
         return (
             <div>
+                {/* Toast Notification */}
+                {toast.show && (
+                    <Toast
+                        message={toast.message}
+                        type={toast.type}
+                        onClose={() => setToast({ ...toast, show: false })}
+                    />
+                )}
+
                 {/* Companies Grid */}
                 <div className="card">
                     <div className="card-header">
@@ -500,6 +513,15 @@ const CompanyDashboard = () => {
     // ========== COMPANY DETAIL VIEW ==========
     return (
         <div>
+            {/* Toast Notification */}
+            {toast.show && (
+                <Toast
+                    message={toast.message}
+                    type={toast.type}
+                    onClose={() => setToast({ ...toast, show: false })}
+                />
+            )}
+
             {/* Back Button & Company Info */}
             <div className="card mb-4">
                 <div className="card-body" style={{ padding: '1rem 1.5rem' }}>
