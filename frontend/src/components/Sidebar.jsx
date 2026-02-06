@@ -1,10 +1,11 @@
 import React from 'react';
-import { Users, Scissors, UserCircle, Building } from 'lucide-react';
+import { Users, Scissors, UserCircle, Building, Briefcase } from 'lucide-react';
 
 const Sidebar = ({ activeView, setActiveView }) => {
     const navItems = [
         { id: 'civil-dashboard', label: 'Civil Dashboard', icon: UserCircle },
         { id: 'company-dashboard', label: 'Company Dashboard', icon: Building },
+        { id: 'labour-dashboard', label: 'Labour Dashboard', icon: Briefcase },
         { id: 'civil', label: 'Customer Orders', icon: Users },
     ];
 

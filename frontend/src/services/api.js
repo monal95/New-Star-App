@@ -208,4 +208,62 @@ export const employeesAPI = {
     }
 };
 
-export default { ordersAPI, companiesAPI, employeesAPI };
+// Labour API
+export const labourAPI = {
+    // Get all labour
+    getAll: async () => {
+        const response = await fetch(`${API_BASE_URL}/labour`);
+        if (!response.ok) throw new Error('Failed to fetch labour');
+        return response.json();
+    },
+
+    // Get labour by category
+    getByCategory: async (category) => {
+        const response = await fetch(`${API_BASE_URL}/labour/category/${category}`);
+        if (!response.ok) throw new Error('Failed to fetch labour by category');
+        return response.json();
+    },
+
+    // Get single labour
+    getById: async (id) => {
+        const response = await fetch(`${API_BASE_URL}/labour/${id}`);
+        if (!response.ok) throw new Error('Failed to fetch labour');
+        return response.json();
+    },
+
+    // Create new labour
+    create: async (labourData) => {
+        const response = await fetch(`${API_BASE_URL}/labour`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(labourData)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to create labour');
+        return data;
+    },
+
+    // Update labour
+    update: async (id, labourData) => {
+        const response = await fetch(`${API_BASE_URL}/labour/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(labourData)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to update labour');
+        return data;
+    },
+
+    // Delete labour
+    delete: async (id) => {
+        const response = await fetch(`${API_BASE_URL}/labour/${id}`, {
+            method: 'DELETE'
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to delete labour');
+        return data;
+    }
+};
+
+export default { ordersAPI, companiesAPI, employeesAPI, labourAPI };
