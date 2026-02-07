@@ -61,7 +61,7 @@ router.post('/', async (req, res) => {
             });
         }
 
-        if (!category || !['Tailor', 'Iron Master', 'Embroider'].includes(category)) {
+        if (!category || !['Tailors', 'Iron Master', 'Embroider'].includes(category)) {
             return res.status(400).json({ 
                 error: 'Valid category is required' 
             });
