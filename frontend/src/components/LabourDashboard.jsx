@@ -221,8 +221,8 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
                         padding: '1rem 1.5rem',
                         backgroundColor: '#f8fafc',
                         borderRadius: '8px',
-                        marginTop: '2rem',
-                        marginBottom: '1.5rem',
+                        marginTop: '1rem',
+                        marginBottom: '1rem',
                         borderLeft: '4px solid #3b82f6'
                     }}>
                         <h2 style={{ margin: 0, fontSize: '1.5rem', color: '#1e293b' }}>
@@ -234,10 +234,10 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
                     {labourByCategory[category].length === 0 ? (
                         <div style={{
                             textAlign: 'center',
-                            padding: '3rem 1.5rem',
+                            padding: '2rem 1.5rem',
                             backgroundColor: '#f8fafc',
                             borderRadius: '8px',
-                            marginBottom: '2rem'
+                            marginBottom: '1.25rem'
                         }}>
                             <Users size={48} style={{ color: '#cbd5e1', margin: '0 auto 1rem' }} />
                             <p style={{ color: '#64748b', fontSize: '1rem' }}>
@@ -248,8 +248,8 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
                         <div style={{
                             display: 'grid',
                             gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                            gap: '1.5rem',
-                            marginBottom: '2rem'
+                            gap: '1rem',
+                            marginBottom: '1.25rem'
                         }}>
                             {labourByCategory[category].map(labour => (
                                 <div
@@ -276,7 +276,7 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
                                     {/* Photo Container */}
                                     <div style={{
                                         width: '100%',
-                                        height: '200px',
+                                        height: '380px',
                                         backgroundColor: '#e2e8f0',
                                         display: 'flex',
                                         alignItems: 'center',
@@ -527,8 +527,8 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
                                                     src={formData.photo}
                                                     alt="Preview"
                                                     style={{
-                                                        maxWidth: '150px',
-                                                        maxHeight: '150px',
+                                                        maxWidth: '280px',
+                                                        maxHeight: '280px',
                                                         borderRadius: '8px',
                                                         marginBottom: '1rem'
                                                     }}
