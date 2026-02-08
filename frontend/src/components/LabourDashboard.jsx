@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Users, Phone, Briefcase, Calendar, Plus, Edit2, Trash2, AlertCircle } from 'lucide-react';
+import { Users, Phone, Briefcase, Calendar, Plus, Edit2, Trash2, AlertCircle, X } from 'lucide-react';
 import Toast from './Toast';
 import { labourAPI } from '../services/api';
 
@@ -14,6 +14,7 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
     const [editingLabour, setEditingLabour] = useState(null);
     const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [selectedLabourForStats, setSelectedLabourForStats] = useState(null);
 
     // Form state
     const [formData, setFormData] = useState({
@@ -218,14 +219,15 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
                 <div key={category}>
                     {/* Category Header */}
                     <div style={{
-                        padding: '1rem 1.5rem',
+                        padding: '0.7rem 1rem',
                         backgroundColor: '#f8fafc',
                         borderRadius: '8px',
                         marginTop: '1rem',
+                        marginTop: '1.5rem',
                         marginBottom: '1rem',
                         borderLeft: '4px solid #3b82f6'
                     }}>
-                        <h2 style={{ margin: 0, fontSize: '1.5rem', color: '#1e293b' }}>
+                        <h2 style={{ margin: 0, fontSize: '1.1rem', color: '#1e293b' }}>
                             {category} ({labourByCategory[category].length})
                         </h2>
                     </div>
@@ -259,21 +261,23 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
                                         borderRadius: '12px',
                                         overflow: 'hidden',
                                         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-                                        transition: 'transform 0.2s, box-shadow 0.2s',
+                                        transition: 'transform 0.3s, box-shadow 0.3s',
                                         display: 'flex',
                                         flexDirection: 'column',
-                                        height: '100%'
+                                        height: '100%',
+                                        cursor: 'pointer'
                                     }}
                                     onMouseEnter={(e) => {
-                                        e.currentTarget.style.transform = 'translateY(-4px)';
-                                        e.currentTarget.style.boxShadow = '0 10px 20px rgba(0, 0, 0, 0.15)';
+                                        e.currentTarget.style.transform = 'translateY(-8px)';
+                                        e.currentTarget.style.boxShadow = '0 15px 30px rgba(0, 0, 0, 0.2)';
                                     }}
                                     onMouseLeave={(e) => {
                                         e.currentTarget.style.transform = 'translateY(0)';
                                         e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
                                     }}
+                                    onClick={() => setSelectedLabourForStats(labour)}
                                 >
-                                    {/* Photo Container */}
+                                    {/* Photo Container - Bigger */}
                                     <div style={{
                                         width: '100%',
                                         height: '380px',
@@ -294,131 +298,31 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
                                                 }}
                                             />
                                         ) : (
-                                            <Users size={64} style={{ color: '#cbd5e1' }} />
+                                            <Users size={80} style={{ color: '#cbd5e1' }} />
                                         )}
                                     </div>
 
-                                    {/* Labour Details */}
-                                    <div style={{ padding: '1.5rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                    {/* Name and Specialist Only */}
+                                    <div style={{ padding: '1.5rem', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
                                         {/* Name */}
                                         <h3 style={{
                                             margin: '0 0 0.5rem 0',
-                                            fontSize: '1.25rem',
+                                            fontSize: '1.1rem',
                                             color: '#1e293b',
                                             fontWeight: '600'
                                         }}>
                                             {labour.name}
                                         </h3>
 
-                                        {/* Category Badge */}
-                                        <span style={{
-                                            display: 'inline-block',
-                                            backgroundColor: '#dbeafe',
-                                            color: '#1e40af',
-                                            padding: '0.2rem 0.6rem',
-                                            borderRadius: '12px',
-                                            fontSize: '0.7rem',
-                                            fontWeight: '600',
-                                            marginBottom: '0.75rem',
-                                            width: 'fit-content',
-                                            border: '1px solid #bfdbfe'
-                                        }}>
-                                            {labour.category}
-                                        </span>
-
                                         {/* Specialist */}
-                                        <div style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '0.5rem',
-                                            marginBottom: '0.5rem',
-                                            color: '#475569',
-                                            fontSize: '0.9rem'
+                                        <p style={{
+                                            margin: '0',
+                                            color: '#64748b',
+                                            fontSize: '0.85rem',
+                                            fontStyle: 'italic'
                                         }}>
-                                            <Briefcase size={16} />
-                                            <span><strong>Specialist:</strong> {labour.specialist}</span>
-                                        </div>
-
-                                        {/* Age */}
-                                        <div style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '0.5rem',
-                                            marginBottom: '0.5rem',
-                                            color: '#475569',
-                                            fontSize: '0.9rem'
-                                        }}>
-                                            <Calendar size={16} />
-                                            <span><strong>Age:</strong> {labour.age} years</span>
-                                        </div>
-
-                                        {/* Phone */}
-                                        <div style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '0.5rem',
-                                            marginBottom: '1rem',
-                                            color: '#475569',
-                                            fontSize: '0.9rem'
-                                        }}>
-                                            <Phone size={16} />
-                                            <a
-                                                href={`tel:${labour.phone}`}
-                                                style={{
-                                                    color: '#3b82f6',
-                                                    textDecoration: 'none'
-                                                }}
-                                            >
-                                                {labour.phone}
-                                            </a>
-                                        </div>
-
-                                        {/* Status */}
-                                        <div style={{ marginBottom: '1rem' }}>
-                                            <span style={{
-                                                display: 'inline-block',
-                                                backgroundColor: labour.status === 'Active' ? '#dcfce7' : '#fee2e2',
-                                                color: labour.status === 'Active' ? '#166534' : '#991b1b',
-                                                padding: '0.25rem 0.75rem',
-                                                borderRadius: '20px',
-                                                fontSize: '0.75rem',
-                                                fontWeight: '600'
-                                            }}>
-                                                {labour.status}
-                                            </span>
-                                        </div>
-
-                                        {/* Action Buttons */}
-                                        <div style={{
-                                            display: 'flex',
-                                            gap: '0.5rem',
-                                            marginTop: 'auto'
-                                        }}>
-                                            <button
-                                                onClick={() => handleEditLabour(labour)}
-                                                className="btn btn-sm btn-primary"
-                                                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
-                                            >
-                                                <Edit2 size={16} />
-                                                Edit
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteLabour(labour._id)}
-                                                className="btn btn-sm"
-                                                style={{
-                                                    flex: 1,
-                                                    backgroundColor: '#fee2e2',
-                                                    color: '#dc2626',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    gap: '0.5rem'
-                                                }}
-                                            >
-                                                <Trash2 size={16} />
-                                                Delete
-                                            </button>
-                                        </div>
+                                            {labour.specialist}
+                                        </p>
                                     </div>
                                 </div>
                             ))}
@@ -462,6 +366,22 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
                     Add Labour
                 </button>
             </div>
+
+            {/* Labour Stats Detailed View Modal */}
+            {selectedLabourForStats && (
+                <LabourStatsModal 
+                    labour={selectedLabourForStats} 
+                    onClose={() => setSelectedLabourForStats(null)}
+                    onEdit={(labour) => {
+                        handleEditLabour(labour);
+                        setSelectedLabourForStats(null);
+                    }}
+                    onDelete={(id) => {
+                        handleDeleteLabour(id);
+                        setSelectedLabourForStats(null);
+                    }}
+                />
+            )}
 
             {/* Add/Edit Labour Modal */}
             {showModal && (
@@ -673,6 +593,587 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
                     </div>
                 </div>
             )}
+        </div>
+    );
+};
+
+// Labour Stats Modal Component
+const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
+    const workHistory = [
+        {
+            id: 1,
+            date: new Date(new Date().setDate(new Date().getDate() - 5)).toISOString().split('T')[0],
+            taskDescription: 'Shirt Tailoring - Set of 3',
+            wagesPerDay: 1500,
+            hoursWorked: 8
+        },
+        {
+            id: 2,
+            date: new Date(new Date().setDate(new Date().getDate() - 4)).toISOString().split('T')[0],
+            taskDescription: 'Pant Hemming - Set of 5',
+            wagesPerDay: 2000,
+            hoursWorked: 8
+        },
+        {
+            id: 3,
+            date: new Date(new Date().setDate(new Date().getDate() - 3)).toISOString().split('T')[0],
+            taskDescription: 'Embroidery Design Work - 2 pieces',
+            wagesPerDay: 2500,
+            hoursWorked: 8
+        },
+        {
+            id: 4,
+            date: new Date(new Date().setDate(new Date().getDate() - 2)).toISOString().split('T')[0],
+            taskDescription: 'Iron Pressing - 10 pieces',
+            wagesPerDay: 1200,
+            hoursWorked: 6
+        },
+        {
+            id: 5,
+            date: new Date(new Date().setDate(new Date().getDate() - 1)).toISOString().split('T')[0],
+            taskDescription: 'Shirt Tailoring - Set of 2',
+            wagesPerDay: 1500,
+            hoursWorked: 8
+        }
+    ];
+
+    const totalWages = workHistory.reduce((sum, work) => sum + work.wagesPerDay, 0);
+    const totalHours = workHistory.reduce((sum, work) => sum + work.hoursWorked, 0);
+
+    return (
+        <div style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1100
+        }}>
+            <div style={{
+                backgroundColor: '#fff',
+                borderRadius: '12px',
+                width: '95%',
+                maxWidth: '1400px',
+                height: '90vh',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden'
+            }}>
+                {/* Header */}
+                <div style={{
+                    padding: '1.5rem',
+                    borderBottom: '1px solid #e2e8f0',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    backgroundColor: '#f8fafc'
+                }}>
+                    <h2 style={{ margin: 0, fontSize: '1.5rem', color: '#1e293b', fontWeight: '600' }}>
+                        Labour Statistics - {labour.name}
+                    </h2>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            fontSize: '2rem',
+                            cursor: 'pointer',
+                            color: '#64748b',
+                            padding: 0,
+                            width: '40px',
+                            height: '40px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'color 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.target.style.color = '#1e293b'}
+                        onMouseLeave={(e) => e.target.style.color = '#64748b'}
+                    >
+                        ×
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '350px 1fr',
+                    gap: '2rem',
+                    padding: '2rem',
+                    overflow: 'hidden',
+                    flex: 1
+                }}>
+                    {/* Left Panel - Labour Details */}
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '1.5rem',
+                        overflowY: 'auto',
+                        paddingRight: '1rem'
+                    }}>
+                        {/* Photo */}
+                        <div style={{
+                            width: '100%',
+                            height: '280px',
+                            borderRadius: '12px',
+                            backgroundColor: '#e2e8f0',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                            flexShrink: 0
+                        }}>
+                            {labour.photo ? (
+                                <img
+                                    src={labour.photo}
+                                    alt={labour.name}
+                                    style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'cover'
+                                    }}
+                                />
+                            ) : (
+                                <Users size={100} style={{ color: '#cbd5e1' }} />
+                            )}
+                        </div>
+
+                        {/* Labour Details Section */}
+                        <div style={{
+                            backgroundColor: '#f8fafc',
+                            borderRadius: '8px',
+                            padding: '1.5rem'
+                        }}>
+                            <h3 style={{
+                                margin: '0 0 1.5rem 0',
+                                fontSize: '1.1rem',
+                                color: '#1e293b',
+                                fontWeight: '600',
+                                borderBottom: '2px solid #e2e8f0',
+                                paddingBottom: '1rem'
+                            }}>
+                                Labour Details
+                            </h3>
+
+                            {/* Name */}
+                            <div style={{ marginBottom: '1rem' }}>
+                                <label style={{
+                                    display: 'block',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '600',
+                                    color: '#64748b',
+                                    marginBottom: '0.25rem',
+                                    textTransform: 'uppercase'
+                                }}>
+                                    Name
+                                </label>
+                                <p style={{
+                                    margin: 0,
+                                    fontSize: '0.95rem',
+                                    color: '#1e293b',
+                                    fontWeight: '500'
+                                }}>
+                                    {labour.name}
+                                </p>
+                            </div>
+
+                            {/* Category */}
+                            <div style={{ marginBottom: '1rem' }}>
+                                <label style={{
+                                    display: 'block',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '600',
+                                    color: '#64748b',
+                                    marginBottom: '0.25rem',
+                                    textTransform: 'uppercase'
+                                }}>
+                                    Category
+                                </label>
+                                <span style={{
+                                    display: 'inline-block',
+                                    backgroundColor: '#dbeafe',
+                                    color: '#1e40af',
+                                    padding: '0.3rem 0.8rem',
+                                    borderRadius: '12px',
+                                    fontSize: '0.8rem',
+                                    fontWeight: '600',
+                                    border: '1px solid #bfdbfe'
+                                }}>
+                                    {labour.category}
+                                </span>
+                            </div>
+
+                            {/* Specialist */}
+                            <div style={{ marginBottom: '1rem' }}>
+                                <label style={{
+                                    display: 'block',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '600',
+                                    color: '#64748b',
+                                    marginBottom: '0.25rem',
+                                    textTransform: 'uppercase'
+                                }}>
+                                    Specialist
+                                </label>
+                                <p style={{
+                                    margin: 0,
+                                    fontSize: '0.95rem',
+                                    color: '#1e293b',
+                                    fontWeight: '500'
+                                }}>
+                                    {labour.specialist}
+                                </p>
+                            </div>
+
+                            {/* Age */}
+                            <div style={{ marginBottom: '1rem' }}>
+                                <label style={{
+                                    display: 'block',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '600',
+                                    color: '#64748b',
+                                    marginBottom: '0.25rem',
+                                    textTransform: 'uppercase'
+                                }}>
+                                    Age
+                                </label>
+                                <p style={{
+                                    margin: 0,
+                                    fontSize: '0.95rem',
+                                    color: '#1e293b',
+                                    fontWeight: '500'
+                                }}>
+                                    {labour.age} years
+                                </p>
+                            </div>
+
+                            {/* Phone */}
+                            <div style={{ marginBottom: '1rem' }}>
+                                <label style={{
+                                    display: 'block',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '600',
+                                    color: '#64748b',
+                                    marginBottom: '0.25rem',
+                                    textTransform: 'uppercase'
+                                }}>
+                                    Phone
+                                </label>
+                                <a
+                                    href={`tel:${labour.phone}`}
+                                    style={{
+                                        fontSize: '0.95rem',
+                                        color: '#3b82f6',
+                                        textDecoration: 'none',
+                                        fontWeight: '500'
+                                    }}
+                                >
+                                    {labour.phone}
+                                </a>
+                            </div>
+
+                            {/* Status */}
+                            <div style={{ marginBottom: '1rem' }}>
+                                <label style={{
+                                    display: 'block',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '600',
+                                    color: '#64748b',
+                                    marginBottom: '0.25rem',
+                                    textTransform: 'uppercase'
+                                }}>
+                                    Status
+                                </label>
+                                <span style={{
+                                    display: 'inline-block',
+                                    backgroundColor: labour.status === 'Active' ? '#dcfce7' : '#fee2e2',
+                                    color: labour.status === 'Active' ? '#166534' : '#991b1b',
+                                    padding: '0.3rem 0.8rem',
+                                    borderRadius: '20px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '600'
+                                }}>
+                                    {labour.status}
+                                </span>
+                            </div>
+
+                            {/* Join Date */}
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <label style={{
+                                    display: 'block',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '600',
+                                    color: '#64748b',
+                                    marginBottom: '0.25rem',
+                                    textTransform: 'uppercase'
+                                }}>
+                                    Join Date
+                                </label>
+                                <p style={{
+                                    margin: 0,
+                                    fontSize: '0.95rem',
+                                    color: '#1e293b',
+                                    fontWeight: '500'
+                                }}>
+                                    {labour.joinDate && new Date(labour.joinDate).toLocaleDateString()}
+                                </p>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: '1fr 1fr',
+                                gap: '0.75rem'
+                            }}>
+                                <button
+                                    onClick={() => onEdit(labour)}
+                                    className="btn btn-primary"
+                                    style={{
+                                        padding: '0.6rem',
+                                        fontSize: '0.85rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '0.5rem'
+                                    }}
+                                >
+                                    <Edit2 size={16} />
+                                    Edit
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (confirm('Are you sure you want to delete this labour?')) {
+                                            onDelete(labour._id);
+                                        }
+                                    }}
+                                    style={{
+                                        backgroundColor: '#fee2e2',
+                                        color: '#dc2626',
+                                        padding: '0.6rem',
+                                        fontSize: '0.85rem',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        fontWeight: '500',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '0.5rem',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#fecaca';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#fee2e2';
+                                    }}
+                                >
+                                    <Trash2 size={16} />
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Right Panel - Work History */}
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '1.5rem',
+                        overflowY: 'auto'
+                    }}>
+                        {/* Summary Cards */}
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(2, 1fr)',
+                            gap: '1rem'
+                        }}>
+                            {/* Total Wages */}
+                            <div style={{
+                                backgroundColor: '#f0fdf4',
+                                border: '1px solid #86efac',
+                                borderRadius: '8px',
+                                padding: '1rem'
+                            }}>
+                                <label style={{
+                                    fontSize: '0.75rem',
+                                    fontWeight: '600',
+                                    color: '#166534',
+                                    textTransform: 'uppercase'
+                                }}>
+                                    Total Wages (Last 5 days)
+                                </label>
+                                <p style={{
+                                    margin: '0.5rem 0 0 0',
+                                    fontSize: '1.5rem',
+                                    fontWeight: '700',
+                                    color: '#166534'
+                                }}>
+                                    Rs. {totalWages.toLocaleString()}
+                                </p>
+                            </div>
+
+                            {/* Total Hours */}
+                            <div style={{
+                                backgroundColor: '#eff6ff',
+                                border: '1px solid #93c5fd',
+                                borderRadius: '8px',
+                                padding: '1rem'
+                            }}>
+                                <label style={{
+                                    fontSize: '0.75rem',
+                                    fontWeight: '600',
+                                    color: '#1e40af',
+                                    textTransform: 'uppercase'
+                                }}>
+                                    Total Hours Worked
+                                </label>
+                                <p style={{
+                                    margin: '0.5rem 0 0 0',
+                                    fontSize: '1.5rem',
+                                    fontWeight: '700',
+                                    color: '#1e40af'
+                                }}>
+                                    {totalHours} hrs
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Work History Table */}
+                        <div style={{
+                            backgroundColor: '#f8fafc',
+                            borderRadius: '8px',
+                            padding: '1.5rem',
+                            flex: 1,
+                            display: 'flex',
+                            flexDirection: 'column'
+                        }}>
+                            <h3 style={{
+                                margin: '0 0 1.5rem 0',
+                                fontSize: '1.1rem',
+                                color: '#1e293b',
+                                fontWeight: '600',
+                                borderBottom: '2px solid #e2e8f0',
+                                paddingBottom: '1rem'
+                            }}>
+                                Work History
+                            </h3>
+
+                            {/* Work Items */}
+                            <div style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '1rem',
+                                overflowY: 'auto',
+                                flex: 1
+                            }}>
+                                {workHistory.map((work) => (
+                                    <div
+                                        key={work.id}
+                                        style={{
+                                            backgroundColor: '#fff',
+                                            border: '1px solid #e2e8f0',
+                                            borderRadius: '8px',
+                                            padding: '1rem',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)';
+                                            e.currentTarget.style.borderColor = '#cbd5e1';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.boxShadow = 'none';
+                                            e.currentTarget.style.borderColor = '#e2e8f0';
+                                        }}
+                                    >
+                                        {/* Date Header */}
+                                        <div style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            marginBottom: '0.75rem'
+                                        }}>
+                                            <span style={{
+                                                fontSize: '0.85rem',
+                                                fontWeight: '600',
+                                                color: '#3b82f6',
+                                                backgroundColor: '#eff6ff',
+                                                padding: '0.3rem 0.6rem',
+                                                borderRadius: '4px'
+                                            }}>
+                                                {new Date(work.date).toLocaleDateString('en-US', { 
+                                                    weekday: 'short', 
+                                                    year: 'numeric', 
+                                                    month: 'short', 
+                                                    day: 'numeric' 
+                                                })}
+                                            </span>
+                                        </div>
+
+                                        {/* Task Description */}
+                                        <p style={{
+                                            margin: '0 0 0.75rem 0',
+                                            fontSize: '0.95rem',
+                                            color: '#1e293b',
+                                            fontWeight: '500'
+                                        }}>
+                                            {work.taskDescription}
+                                        </p>
+
+                                        {/* Wages and Hours */}
+                                        <div style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: '1fr 1fr',
+                                            gap: '1rem',
+                                            borderTop: '1px solid #e2e8f0',
+                                            paddingTop: '0.75rem'
+                                        }}>
+                                            <div>
+                                                <label style={{
+                                                    fontSize: '0.7rem',
+                                                    fontWeight: '600',
+                                                    color: '#64748b',
+                                                    textTransform: 'uppercase'
+                                                }}>
+                                                    Wages
+                                                </label>
+                                                <p style={{
+                                                    margin: '0.3rem 0 0 0',
+                                                    fontSize: '1.1rem',
+                                                    fontWeight: '700',
+                                                    color: '#16a34a'
+                                                }}>
+                                                    Rs. {work.wagesPerDay}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <label style={{
+                                                    fontSize: '0.7rem',
+                                                    fontWeight: '600',
+                                                    color: '#64748b',
+                                                    textTransform: 'uppercase'
+                                                }}>
+                                                    Hours Worked
+                                                </label>
+                                                <p style={{
+                                                    margin: '0.3rem 0 0 0',
+                                                    fontSize: '1.1rem',
+                                                    fontWeight: '700',
+                                                    color: '#2563eb'
+                                                }}>
+                                                    {work.hoursWorked} hrs
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };
