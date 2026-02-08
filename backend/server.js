@@ -15,6 +15,8 @@ const ordersRoutes = require('./routes/orders');
 const companiesRoutes = require('./routes/companies');
 const companyEmployeesRoutes = require('./routes/companyEmployees');
 const labourRoutes = require('./routes/labour');
+const wagesRoutes = require('./routes/wages');
+const workAssignmentsRoutes = require('./routes/workAssignments');
 
 // Routes
 app.get('/api/health', (req, res) => {
@@ -26,6 +28,8 @@ app.use('/api/orders', ordersRoutes);
 app.use('/api/companies', companiesRoutes);
 app.use('/api/employees', companyEmployeesRoutes);
 app.use('/api/labour', labourRoutes);
+app.use('/api/wages', wagesRoutes);
+app.use('/api/workAssignments', workAssignmentsRoutes);
 
 // Start server after DB connection
 const PORT = process.env.PORT || 5000;

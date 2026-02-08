@@ -266,4 +266,98 @@ export const labourAPI = {
     }
 };
 
-export default { ordersAPI, companiesAPI, employeesAPI, labourAPI };
+// Wages API
+export const wagesAPI = {
+    // Get current wage configuration
+    get: async () => {
+        const response = await fetch(`${API_BASE_URL}/wages`);
+        if (!response.ok) throw new Error('Failed to fetch wage configuration');
+        return response.json();
+    },
+
+    // Update wage configuration
+    update: async (wageData) => {
+        const response = await fetch(`${API_BASE_URL}/wages`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(wageData)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to update wage configuration');
+        return data;
+    },
+
+    // Reset to default wages
+    reset: async () => {
+        const response = await fetch(`${API_BASE_URL}/wages/reset`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to reset wages');
+        return data;
+    }
+};
+
+// Work Assignments API
+export const workAssignmentsAPI = {
+    // Get assignments for a specific labour
+    getByLabour: async (labourId) => {
+        const response = await fetch(`${API_BASE_URL}/workAssignments/labour/${labourId}`);
+        if (!response.ok) throw new Error('Failed to fetch labour assignments');
+        return response.json();
+    },
+
+    // Get assignments for a specific order
+    getByOrder: async (orderId) => {
+        const response = await fetch(`${API_BASE_URL}/workAssignments/order/${orderId}`);
+        if (!response.ok) throw new Error('Failed to fetch order assignments');
+        return response.json();
+    },
+
+    // Create new work assignment
+    create: async (assignmentData) => {
+        const response = await fetch(`${API_BASE_URL}/workAssignments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(assignmentData)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to create work assignment');
+        return data;
+    },
+
+    // Update assignment status
+    updateStatus: async (id, status) => {
+        const response = await fetch(`${API_BASE_URL}/workAssignments/${id}/status`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to update assignment status');
+        return data;
+    },
+
+    // Delete work assignment
+    delete: async (id) => {
+        const response = await fetch(`${API_BASE_URL}/workAssignments/${id}`, {
+            method: 'DELETE'
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to delete assignment');
+        return data;
+    },
+
+    // Get summary stats for a labour
+    getLabourSummary: async (labourId, startDate = null, endDate = null) => {
+        let url = `${API_BASE_URL}/workAssignments/summary/labour/${labourId}`;
+        if (startDate && endDate) {
+            url += `?startDate=${startDate}&endDate=${endDate}`;
+        }
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Failed to fetch labour summary');
+        return response.json();
+    }
+};
+
+export default { ordersAPI, companiesAPI, employeesAPI, labourAPI, wagesAPI, workAssignmentsAPI };
