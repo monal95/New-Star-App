@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Users, Phone, Briefcase, Calendar, Plus, Edit2, Trash2, AlertCircle, X } from 'lucide-react';
 import Toast from './Toast';
-import { labourAPI } from '../services/api';
+import { labourAPI, workAssignmentsAPI } from '../services/api';
 
 // Labour categories constant
 const LABOUR_CATEGORIES = ['Tailor', 'Iron Master', 'Embroider'];
@@ -598,46 +598,33 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
 
 // Labour Stats Modal Component
 const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
-    const workHistory = [
-        {
-            id: 1,
-            date: new Date(new Date().setDate(new Date().getDate() - 5)).toISOString().split('T')[0],
-            taskDescription: 'Shirt Tailoring - Set of 3',
-            wagesPerDay: 1500,
-            hoursWorked: 8
-        },
-        {
-            id: 2,
-            date: new Date(new Date().setDate(new Date().getDate() - 4)).toISOString().split('T')[0],
-            taskDescription: 'Pant Hemming - Set of 5',
-            wagesPerDay: 2000,
-            hoursWorked: 8
-        },
-        {
-            id: 3,
-            date: new Date(new Date().setDate(new Date().getDate() - 3)).toISOString().split('T')[0],
-            taskDescription: 'Embroidery Design Work - 2 pieces',
-            wagesPerDay: 2500,
-            hoursWorked: 8
-        },
-        {
-            id: 4,
-            date: new Date(new Date().setDate(new Date().getDate() - 2)).toISOString().split('T')[0],
-            taskDescription: 'Iron Pressing - 10 pieces',
-            wagesPerDay: 1200,
-            hoursWorked: 6
-        },
-        {
-            id: 5,
-            date: new Date(new Date().setDate(new Date().getDate() - 1)).toISOString().split('T')[0],
-            taskDescription: 'Shirt Tailoring - Set of 2',
-            wagesPerDay: 1500,
-            hoursWorked: 8
-        }
-    ];
+    const [assignments, setAssignments] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-    const totalWages = workHistory.reduce((sum, work) => sum + work.wagesPerDay, 0);
-    const totalHours = workHistory.reduce((sum, work) => sum + work.hoursWorked, 0);
+    // Load work assignments from API
+    useEffect(() => {
+        const fetchAssignments = async () => {
+            try {
+                setLoading(true);
+                const data = await workAssignmentsAPI.getByLabour(labour._id);
+                setAssignments(data);
+                setError(null);
+            } catch (err) {
+                console.error('Error fetching assignments:', err);
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (labour && labour._id) {
+            fetchAssignments();
+        }
+    }, [labour]);
+
+    const totalWages = assignments.reduce((sum, work) => sum + work.totalWages, 0);
+    const totalQuantity = assignments.reduce((sum, work) => sum + work.quantity, 0);
 
     return (
         <div style={{
@@ -844,7 +831,7 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
                                     color: '#1e293b',
                                     fontWeight: '500'
                                 }}>
-                                    {labour.age} years
+                                    {labour.age || 'N/A'} years
                                 </p>
                             </div>
 
@@ -1002,7 +989,7 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
                                     color: '#166534',
                                     textTransform: 'uppercase'
                                 }}>
-                                    Total Wages (Last 5 days)
+                                    Total Wages Earned
                                 </label>
                                 <p style={{
                                     margin: '0.5rem 0 0 0',
@@ -1014,7 +1001,7 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
                                 </p>
                             </div>
 
-                            {/* Total Hours */}
+                            {/* Total Items */}
                             <div style={{
                                 backgroundColor: '#eff6ff',
                                 border: '1px solid #93c5fd',
@@ -1027,7 +1014,7 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
                                     color: '#1e40af',
                                     textTransform: 'uppercase'
                                 }}>
-                                    Total Hours Worked
+                                    Total Items Completed
                                 </label>
                                 <p style={{
                                     margin: '0.5rem 0 0 0',
@@ -1035,7 +1022,7 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
                                     fontWeight: '700',
                                     color: '#1e40af'
                                 }}>
-                                    {totalHours} hrs
+                                    {totalQuantity}
                                 </p>
                             </div>
                         </div>
@@ -1057,118 +1044,206 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
                                 borderBottom: '2px solid #e2e8f0',
                                 paddingBottom: '1rem'
                             }}>
-                                Work History
+                                Work Assignments
                             </h3>
 
+                            {/* Loading State */}
+                            {loading && (
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    height: '200px',
+                                    color: '#64748b'
+                                }}>
+                                    <p>Loading assignments...</p>
+                                </div>
+                            )}
+
+                            {/* Error State */}
+                            {error && (
+                                <div style={{
+                                    backgroundColor: '#fee2e2',
+                                    border: '1px solid #fecaca',
+                                    borderRadius: '8px',
+                                    padding: '1rem',
+                                    color: '#dc2626',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.75rem'
+                                }}>
+                                    <AlertCircle size={20} />
+                                    <p style={{ margin: 0 }}>{error}</p>
+                                </div>
+                            )}
+
+                            {/* No Data State */}
+                            {!loading && !error && assignments.length === 0 && (
+                                <div style={{
+                                    textAlign: 'center',
+                                    padding: '2rem',
+                                    color: '#64748b'
+                                }}>
+                                    <p>No work assignments yet. Assign work from order dashboards.</p>
+                                </div>
+                            )}
+
                             {/* Work Items */}
-                            <div style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '1rem',
-                                overflowY: 'auto',
-                                flex: 1
-                            }}>
-                                {workHistory.map((work) => (
-                                    <div
-                                        key={work.id}
-                                        style={{
-                                            backgroundColor: '#fff',
-                                            border: '1px solid #e2e8f0',
-                                            borderRadius: '8px',
-                                            padding: '1rem',
-                                            transition: 'all 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => {
-                                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)';
-                                            e.currentTarget.style.borderColor = '#cbd5e1';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            e.currentTarget.style.boxShadow = 'none';
-                                            e.currentTarget.style.borderColor = '#e2e8f0';
-                                        }}
-                                    >
-                                        {/* Date Header */}
-                                        <div style={{
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            alignItems: 'center',
-                                            marginBottom: '0.75rem'
-                                        }}>
-                                            <span style={{
-                                                fontSize: '0.85rem',
-                                                fontWeight: '600',
-                                                color: '#3b82f6',
-                                                backgroundColor: '#eff6ff',
-                                                padding: '0.3rem 0.6rem',
-                                                borderRadius: '4px'
+                            {!loading && assignments.length > 0 && (
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '1rem',
+                                    overflowY: 'auto',
+                                    flex: 1
+                                }}>
+                                    {assignments.map((work) => (
+                                        <div
+                                            key={work._id}
+                                            style={{
+                                                backgroundColor: '#fff',
+                                                border: '1px solid #e2e8f0',
+                                                borderRadius: '8px',
+                                                padding: '1rem',
+                                                transition: 'all 0.2s'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)';
+                                                e.currentTarget.style.borderColor = '#cbd5e1';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.boxShadow = 'none';
+                                                e.currentTarget.style.borderColor = '#e2e8f0';
+                                            }}
+                                        >
+                                            {/* Order and Date Header */}
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                marginBottom: '0.75rem'
                                             }}>
-                                                {new Date(work.date).toLocaleDateString('en-US', { 
-                                                    weekday: 'short', 
-                                                    year: 'numeric', 
-                                                    month: 'short', 
-                                                    day: 'numeric' 
-                                                })}
-                                            </span>
-                                        </div>
-
-                                        {/* Task Description */}
-                                        <p style={{
-                                            margin: '0 0 0.75rem 0',
-                                            fontSize: '0.95rem',
-                                            color: '#1e293b',
-                                            fontWeight: '500'
-                                        }}>
-                                            {work.taskDescription}
-                                        </p>
-
-                                        {/* Wages and Hours */}
-                                        <div style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: '1fr 1fr',
-                                            gap: '1rem',
-                                            borderTop: '1px solid #e2e8f0',
-                                            paddingTop: '0.75rem'
-                                        }}>
-                                            <div>
-                                                <label style={{
-                                                    fontSize: '0.7rem',
-                                                    fontWeight: '600',
-                                                    color: '#64748b',
-                                                    textTransform: 'uppercase'
+                                                <div>
+                                                    <span style={{
+                                                        fontSize: '0.85rem',
+                                                        fontWeight: '600',
+                                                        color: '#3b82f6',
+                                                        backgroundColor: '#eff6ff',
+                                                        padding: '0.3rem 0.6rem',
+                                                        borderRadius: '4px',
+                                                        marginRight: '0.5rem'
+                                                    }}>
+                                                        {work.orderCustomerName || work.orderId}
+                                                    </span>
+                                                    <span style={{
+                                                        fontSize: '0.75rem',
+                                                        color: '#64748b'
+                                                    }}>
+                                                        {new Date(work.assignedDate).toLocaleDateString('en-US', { 
+                                                            month: 'short', 
+                                                            day: 'numeric'
+                                                        })}
+                                                    </span>
+                                                </div>
+                                                <span style={{
+                                                    display: 'inline-block',
+                                                    backgroundColor: work.status === 'Completed' ? '#dcfce7' : work.status === 'InProgress' ? '#fef3c7' : '#dbeafe',
+                                                    color: work.status === 'Completed' ? '#166534' : work.status === 'InProgress' ? '#92400e' : '#1e40af',
+                                                    padding: '0.3rem 0.6rem',
+                                                    borderRadius: '4px',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: '600'
                                                 }}>
-                                                    Wages
-                                                </label>
-                                                <p style={{
-                                                    margin: '0.3rem 0 0 0',
-                                                    fontSize: '1.1rem',
-                                                    fontWeight: '700',
-                                                    color: '#16a34a'
-                                                }}>
-                                                    Rs. {work.wagesPerDay}
-                                                </p>
+                                                    {work.status}
+                                                </span>
                                             </div>
-                                            <div>
-                                                <label style={{
-                                                    fontSize: '0.7rem',
-                                                    fontWeight: '600',
-                                                    color: '#64748b',
-                                                    textTransform: 'uppercase'
-                                                }}>
-                                                    Hours Worked
-                                                </label>
+
+                                            {/* Work Type and Description */}
+                                            <p style={{
+                                                margin: '0 0 0.75rem 0',
+                                                fontSize: '0.95rem',
+                                                color: '#1e293b',
+                                                fontWeight: '500'
+                                            }}>
+                                                {work.workType} {work.quantity && `(${work.quantity} items)`}
+                                            </p>
+                                            {work.description && (
                                                 <p style={{
-                                                    margin: '0.3rem 0 0 0',
-                                                    fontSize: '1.1rem',
-                                                    fontWeight: '700',
-                                                    color: '#2563eb'
+                                                    margin: '0 0 0.75rem 0',
+                                                    fontSize: '0.85rem',
+                                                    color: '#64748b'
                                                 }}>
-                                                    {work.hoursWorked} hrs
+                                                    {work.description}
                                                 </p>
+                                            )}
+
+                                            {/* Wages and Details */}
+                                            <div style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: '1fr 1fr 1fr',
+                                                gap: '1rem',
+                                                borderTop: '1px solid #e2e8f0',
+                                                paddingTop: '0.75rem'
+                                            }}>
+                                                <div>
+                                                    <label style={{
+                                                        fontSize: '0.7rem',
+                                                        fontWeight: '600',
+                                                        color: '#64748b',
+                                                        textTransform: 'uppercase'
+                                                    }}>
+                                                        Rate/Item
+                                                    </label>
+                                                    <p style={{
+                                                        margin: '0.3rem 0 0 0',
+                                                        fontSize: '1rem',
+                                                        fontWeight: '700',
+                                                        color: '#7c3aed'
+                                                    }}>
+                                                        Rs. {work.wagePerUnit}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <label style={{
+                                                        fontSize: '0.7rem',
+                                                        fontWeight: '600',
+                                                        color: '#64748b',
+                                                        textTransform: 'uppercase'
+                                                    }}>
+                                                        Total Wages
+                                                    </label>
+                                                    <p style={{
+                                                        margin: '0.3rem 0 0 0',
+                                                        fontSize: '1.1rem',
+                                                        fontWeight: '700',
+                                                        color: '#16a34a'
+                                                    }}>
+                                                        Rs. {work.totalWages}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <label style={{
+                                                        fontSize: '0.7rem',
+                                                        fontWeight: '600',
+                                                        color: '#64748b',
+                                                        textTransform: 'uppercase'
+                                                    }}>
+                                                        Quantity
+                                                    </label>
+                                                    <p style={{
+                                                        margin: '0.3rem 0 0 0',
+                                                        fontSize: '1rem',
+                                                        fontWeight: '700',
+                                                        color: '#2563eb'
+                                                    }}>
+                                                        {work.quantity} pcs
+                                                    </p>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

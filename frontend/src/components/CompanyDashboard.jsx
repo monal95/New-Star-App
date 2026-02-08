@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
     Building2, Clock, CheckCircle, X, Shirt, PanelBottom, Eye, Plus, Save, Calendar,
-    Users, ShieldCheck, UserCog, Briefcase, UserCheck, Home, ArrowLeft, Phone, Mail, MapPin, Check, XCircle
+    Users, ShieldCheck, UserCog, Briefcase, UserCheck, Home, ArrowLeft, Phone, Mail, MapPin, Check, XCircle, Zap
 } from 'lucide-react';
-import { companiesAPI, employeesAPI } from '../services/api';
+import { companiesAPI, employeesAPI, labourAPI, workAssignmentsAPI } from '../services/api';
 import Toast from './Toast';
 
 // Position types with icons
@@ -67,6 +67,18 @@ const CompanyDashboard = () => {
         noOfSets: 1,
         shirt: { length: '', shoulder: '', sleeve: '', chest: '', collar: '', waist: '' },
         pant: { length: '', waist: '', hip: '', thigh: '', knee: '', bottom: '' }
+    });
+
+    // Work Assignment State
+    const [showAssignModal, setShowAssignModal] = useState(false);
+    const [labourList, setLabourList] = useState([]);
+    const [loadingLabour, setLoadingLabour] = useState(false);
+    const [availableWorkTypes, setAvailableWorkTypes] = useState(['Pant', 'Shirt', 'Ironing', 'Embroidery']);
+    const [assignmentData, setAssignmentData] = useState({
+        labourId: '',
+        workType: '',
+        quantity: 1,
+        customWage: ''
     });
 
     // Fetch companies
@@ -298,6 +310,83 @@ const CompanyDashboard = () => {
         } catch (error) {
             setFormError(error.message || 'Failed to create order');
             setToast({ show: true, message: 'Order Not Stored', type: 'error' });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    // Load labour list for assignment
+    const loadLabourList = async () => {
+        try {
+            setLoadingLabour(true);
+            const labours = await labourAPI.getAll();
+            setLabourList(labours || []);
+        } catch (error) {
+            console.error('Error loading labour list:', error);
+            setToast({ show: true, message: 'Failed to load labour list', type: 'error' });
+        } finally {
+            setLoadingLabour(false);
+        }
+    };
+
+    // Fetch already assigned work types for an order
+    const fetchAssignedWorkTypes = async (orderId) => {
+        try {
+            const assignments = await workAssignmentsAPI.getByOrder(orderId);
+            const workTypes = assignments.map(a => a.workType);
+            setAvailableWorkTypes(['Pant', 'Shirt', 'Ironing', 'Embroidery'].filter(wt => !workTypes.includes(wt)));
+        } catch (error) {
+            console.error('Error fetching assigned work types:', error);
+            setAvailableWorkTypes(['Pant', 'Shirt', 'Ironing', 'Embroidery']);
+        }
+    };
+
+    // Open assignment modal
+    const handleOpenAssignModal = async (order) => {
+        setSelectedOrder(order);
+        setAssignmentData({ labourId: '', workType: '', quantity: 1, customWage: '' });
+        await fetchAssignedWorkTypes(order.orderId || order._id);
+        await loadLabourList();
+        setShowAssignModal(true);
+    };
+
+    // Close assignment modal
+    const handleCloseAssignModal = () => {
+        setShowAssignModal(false);
+        setSelectedOrder(null);
+        setAssignmentData({ labourId: '', workType: '', quantity: 1, customWage: '' });
+    };
+
+    // Submit work assignment
+    const handleSubmitAssignment = async (e) => {
+        e.preventDefault();
+        
+        if (!assignmentData.labourId || !assignmentData.workType || !assignmentData.quantity) {
+            setToast({ show: true, message: 'Please fill all required fields', type: 'error' });
+            return;
+        }
+
+        try {
+            setIsSubmitting(true);
+            const selectedLabour = labourList.find(l => l._id === assignmentData.labourId);
+            
+            await workAssignmentsAPI.create({
+                labourId: assignmentData.labourId,
+                orderId: selectedOrder.orderId || selectedOrder._id,
+                workType: assignmentData.workType,
+                quantity: parseInt(assignmentData.quantity),
+                customWage: assignmentData.customWage ? parseFloat(assignmentData.customWage) : null,
+                orderCustomerName: selectedOrder.name,
+                orderDate: selectedOrder.date || new Date().toISOString().split('T')[0]
+            });
+
+            setToast({ show: true, message: `Work assigned to ${selectedLabour?.name}`, type: 'success' });
+            handleCloseAssignModal();
+            
+            // Refresh the assignment data for this order
+            await fetchAssignedWorkTypes(selectedOrder.orderId || selectedOrder._id);
+        } catch (error) {
+            setToast({ show: true, message: error.message || 'Failed to assign work', type: 'error' });
         } finally {
             setIsSubmitting(false);
         }
@@ -734,9 +823,25 @@ const CompanyDashboard = () => {
                                             <td>{order.noOfSets || 1}</td>
                                             <td>{order.date}</td>
                                             <td>
-                                                <button className="btn btn-sm btn-secondary" onClick={() => viewMeasurements(order)}>
-                                                    <Eye size={14} /> View
-                                                </button>
+                                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                    <button className="btn btn-sm btn-secondary" onClick={() => viewMeasurements(order)}>
+                                                        <Eye size={14} /> View
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-sm"
+                                                        style={{
+                                                            backgroundColor: availableWorkTypes.length === 0 ? '#10b981' : '#3b82f6',
+                                                            color: 'white',
+                                                            border: 'none',
+                                                            cursor: availableWorkTypes.length === 0 ? 'not-allowed' : 'pointer',
+                                                            opacity: availableWorkTypes.length === 0 ? 0.7 : 1
+                                                        }}
+                                                        onClick={() => handleOpenAssignModal(order)}
+                                                        disabled={availableWorkTypes.length === 0}
+                                                    >
+                                                        {availableWorkTypes.length === 0 ? '✓ Assigned' : 'Assign'}
+                                                    </button>
+                                                </div>
                                             </td>
                                             <td>
                                                 <span className={`badge ${order.status === 'Delivered' || order.status === 'Moved to stitching' ? 'badge-success' : order.status === 'In Progress' ? 'badge-info' : 'badge-warning'}`}>
@@ -1047,6 +1152,135 @@ const CompanyDashboard = () => {
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Work Assignment Modal */}
+            {showAssignModal && selectedOrder && (
+                <div className="modal-overlay" onClick={handleCloseAssignModal}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                        <div className="modal-header">
+                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Zap size={20} />
+                                Assign Work - {selectedOrder.name}
+                            </h3>
+                            <button className="btn btn-sm btn-secondary" onClick={handleCloseAssignModal}>
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleSubmitAssignment}>
+                            <div className="modal-body">
+                                {/* Labour Selection */}
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="form-label">Select Labour *</label>
+                                    <select
+                                        value={assignmentData.labourId}
+                                        onChange={(e) => setAssignmentData({ ...assignmentData, labourId: e.target.value })}
+                                        className="form-input"
+                                        disabled={loadingLabour || isSubmitting}
+                                    >
+                                        <option value="">Choose a labour</option>
+                                        {labourList.map(labour => (
+                                            <option key={labour._id} value={labour._id}>
+                                                {labour.name} ({labour.category})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Work Type Selection */}
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="form-label">Work Type *</label>
+                                    {availableWorkTypes.length === 0 ? (
+                                        <div style={{
+                                            padding: '1rem',
+                                            backgroundColor: '#dcfce7',
+                                            borderRadius: '6px',
+                                            color: '#15803d',
+                                            fontSize: '0.9rem',
+                                            textAlign: 'center'
+                                        }}>
+                                            ✓ All work types have been assigned
+                                        </div>
+                                    ) : (
+                                        <select
+                                            value={assignmentData.workType}
+                                            onChange={(e) => setAssignmentData({ ...assignmentData, workType: e.target.value })}
+                                            className="form-input"
+                                            disabled={isSubmitting}
+                                        >
+                                            <option value="">
+                                                Select work type ({availableWorkTypes.length} available)
+                                            </option>
+                                            {availableWorkTypes.map(workType => (
+                                                <option key={workType} value={workType}>
+                                                    {workType}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    )}
+                                </div>
+
+                                {/* Quantity */}
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="form-label">Quantity *</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={assignmentData.quantity}
+                                        onChange={(e) => setAssignmentData({ ...assignmentData, quantity: parseInt(e.target.value) })}
+                                        className="form-input"
+                                        disabled={isSubmitting}
+                                    />
+                                </div>
+
+                                {/* Custom Wage Override */}
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="form-label">Custom Wage (Optional)</label>
+                                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>
+                                        Leave empty to use standard rates
+                                    </div>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.5"
+                                        placeholder="Enter custom wage per unit"
+                                        value={assignmentData.customWage}
+                                        onChange={(e) => setAssignmentData({ ...assignmentData, customWage: e.target.value })}
+                                        className="form-input"
+                                        disabled={isSubmitting}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div style={{ 
+                                padding: '1rem 1.5rem', 
+                                borderTop: '1px solid #e2e8f0',
+                                display: 'flex',
+                                justifyContent: 'flex-end',
+                                gap: '1rem'
+                            }}>
+                                <button 
+                                    type="button" 
+                                    className="btn btn-secondary" 
+                                    onClick={handleCloseAssignModal}
+                                    disabled={isSubmitting}
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    className="btn btn-primary"
+                                    disabled={isSubmitting || availableWorkTypes.length === 0}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                                >
+                                    <Zap size={18} />
+                                    {isSubmitting ? 'Assigning...' : 'Assign Work'}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}
