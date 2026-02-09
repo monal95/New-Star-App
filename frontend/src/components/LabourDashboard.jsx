@@ -223,7 +223,6 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
                         backgroundColor: '#f8fafc',
                         borderRadius: '8px',
                         marginTop: '1rem',
-                        marginTop: '1.5rem',
                         marginBottom: '1rem',
                         borderLeft: '4px solid #3b82f6'
                     }}>
@@ -600,29 +599,45 @@ const LabourDashboard = ({ searchTerm = '', filterCategory = 'all' }) => {
 // Labour Stats Modal Component
 const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
     const [assignments, setAssignments] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
 
-    // Load work assignments from API
-    useEffect(() => {
-        const fetchAssignments = async () => {
-            try {
-                setLoading(true);
-                const data = await workAssignmentsAPI.getByLabour(labour._id);
-                setAssignments(data);
-                setError(null);
-            } catch (err) {
-                console.error('Error fetching assignments:', err);
-                setError(err.message);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        if (labour && labour._id) {
-            fetchAssignments();
+    // Load work assignments with date range filter
+    const fetchAssignmentsByDateRange = React.useCallback(async (start, end) => {
+        try {
+            setLoading(true);
+            const data = await workAssignmentsAPI.getLabourSummary(labour._id, start, end);
+            setAssignments(data.assignments || []);
+            setError(null);
+        } catch (err) {
+            console.error('Error fetching assignments:', err);
+            setError(err.message);
+        } finally {
+            setLoading(false);
         }
-    }, [labour]);
+    }, [labour._id]);
+
+    // Handle filter button click
+    const handleFilterByDateRange = () => {
+        if (!startDate || !endDate) {
+            setError('Please select both start and end dates');
+            return;
+        }
+        if (new Date(startDate) > new Date(endDate)) {
+            setError('Start date must be before end date');
+            return;
+        }
+        fetchAssignmentsByDateRange(startDate, endDate);
+    };
+
+    // Load all assignments on component mount
+    useEffect(() => {
+        if (labour && labour._id) {
+            fetchAssignmentsByDateRange('1970-01-01', new Date().toISOString().split('T')[0]);
+        }
+    }, [labour, fetchAssignmentsByDateRange]);
 
     const totalWages = assignments.reduce((sum, work) => sum + work.totalWages, 0);
     const totalQuantity = assignments.reduce((sum, work) => sum + work.quantity, 0);
@@ -1045,21 +1060,90 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
                                 borderBottom: '2px solid #e2e8f0',
                                 paddingBottom: '1rem'
                             }}>
-                                Work Assignments
+                                Labour Work Statistics by Date Range
                             </h3>
 
-                            {/* Loading State */}
-                            {loading && (
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    height: '200px',
-                                    color: '#64748b'
-                                }}>
-                                    <p>Loading assignments...</p>
+                            {/* Date Range Filter */}
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: '1fr 1fr auto',
+                                gap: '1rem',
+                                marginBottom: '1.5rem',
+                                alignItems: 'flex-end'
+                            }}>
+                                {/* Start Date */}
+                                <div>
+                                    <label style={{
+                                        display: 'block',
+                                        fontSize: '0.75rem',
+                                        fontWeight: '600',
+                                        color: '#64748b',
+                                        marginBottom: '0.5rem',
+                                        textTransform: 'uppercase'
+                                    }}>
+                                        Start Date
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={startDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.6rem 0.75rem',
+                                            border: '1px solid #cbd5e1',
+                                            borderRadius: '6px',
+                                            fontSize: '0.9rem',
+                                            fontFamily: 'inherit',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    />
                                 </div>
-                            )}
+
+                                {/* End Date */}
+                                <div>
+                                    <label style={{
+                                        display: 'block',
+                                        fontSize: '0.75rem',
+                                        fontWeight: '600',
+                                        color: '#64748b',
+                                        marginBottom: '0.5rem',
+                                        textTransform: 'uppercase'
+                                    }}>
+                                        End Date
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.6rem 0.75rem',
+                                            border: '1px solid #cbd5e1',
+                                            borderRadius: '6px',
+                                            fontSize: '0.9rem',
+                                            fontFamily: 'inherit',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    />
+                                </div>
+
+                                {/* Filter Button */}
+                                <button
+                                    onClick={handleFilterByDateRange}
+                                    disabled={loading}
+                                    className="btn btn-primary"
+                                    style={{
+                                        padding: '0.6rem 1.5rem',
+                                        fontSize: '0.85rem',
+                                        fontWeight: '500',
+                                        minWidth: '100px',
+                                        opacity: loading ? 0.6 : 1,
+                                        cursor: loading ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    {loading ? 'Loading...' : 'Filter'}
+                                </button>
+                            </div>
 
                             {/* Error State */}
                             {error && (
@@ -1071,7 +1155,8 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
                                     color: '#dc2626',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: '0.75rem'
+                                    gap: '0.75rem',
+                                    marginBottom: '1rem'
                                 }}>
                                     <AlertCircle size={20} />
                                     <p style={{ margin: 0 }}>{error}</p>
@@ -1085,7 +1170,7 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
                                     padding: '2rem',
                                     color: '#64748b'
                                 }}>
-                                    <p>No work assignments yet. Assign work from order dashboards.</p>
+                                    <p>No work assignments found for the selected date range.</p>
                                 </div>
                             )}
 
@@ -1117,7 +1202,7 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
                                                 e.currentTarget.style.borderColor = '#e2e8f0';
                                             }}
                                         >
-                                            {/* Order and Date Header */}
+                                            {/* Order ID and Status Header */}
                                             <div style={{
                                                 display: 'flex',
                                                 justifyContent: 'space-between',
@@ -1127,14 +1212,14 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
                                                 <div>
                                                     <span style={{
                                                         fontSize: '0.85rem',
-                                                        fontWeight: '600',
-                                                        color: '#3b82f6',
-                                                        backgroundColor: '#eff6ff',
-                                                        padding: '0.3rem 0.6rem',
+                                                        fontWeight: '700',
+                                                        color: '#dc2626',
+                                                        backgroundColor: '#fee2e2',
+                                                        padding: '0.3rem 0.8rem',
                                                         borderRadius: '4px',
-                                                        marginRight: '0.5rem'
+                                                        marginRight: '0.75rem'
                                                     }}>
-                                                        {work.orderCustomerName || work.orderId}
+                                                        Order ID: {work.orderId}
                                                     </span>
                                                     <span style={{
                                                         fontSize: '0.75rem',
@@ -1142,7 +1227,8 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
                                                     }}>
                                                         {new Date(work.assignedDate).toLocaleDateString('en-US', { 
                                                             month: 'short', 
-                                                            day: 'numeric'
+                                                            day: 'numeric',
+                                                            year: 'numeric'
                                                         })}
                                                     </span>
                                                 </div>
@@ -1150,7 +1236,7 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
                                                     display: 'inline-block',
                                                     backgroundColor: work.status === 'Completed' ? '#dcfce7' : work.status === 'InProgress' ? '#fef3c7' : '#dbeafe',
                                                     color: work.status === 'Completed' ? '#166534' : work.status === 'InProgress' ? '#92400e' : '#1e40af',
-                                                    padding: '0.3rem 0.6rem',
+                                                    padding: '0.3rem 0.8rem',
                                                     borderRadius: '4px',
                                                     fontSize: '0.75rem',
                                                     fontWeight: '600'
