@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { ObjectId } = require('mongodb');
 const { getDB } = require('../config/db');
+const { sendOrderStatusEmail } = require('../services/emailService');
 
 // Get all orders
 router.get('/', async (req, res) => {
@@ -114,6 +115,19 @@ router.post('/', async (req, res) => {
 
         const result = await db.collection('orders').insertOne(newOrder);
         
+        // Send email notification for civil orders (orders without companyId)
+        if (!newOrder.companyId && newOrder.email && newOrder.email.trim()) {
+            const orderWithId = { ...newOrder, _id: result.insertedId };
+            const emailResult = await sendOrderStatusEmail(orderWithId, 'Pending');
+            console.log('\n📧 Order Creation Email Result:');
+            console.log(`   Success: ${emailResult.success}`);
+            console.log(`   Message: ${emailResult.message}`);
+            if (!emailResult.success && emailResult.error) {
+                console.log(`   Error Code: ${emailResult.error}`);
+            }
+            console.log();
+        }
+        
         res.status(201).json({ 
             message: 'Order created successfully',
             order: { ...newOrder, _id: result.insertedId }
@@ -139,6 +153,16 @@ router.patch('/:id/status', async (req, res) => {
             return res.status(400).json({ error: 'Invalid status' });
         }
 
+        // Fetch the order first to get all details for email
+        const order = await db.collection('orders').findOne(
+            { _id: new ObjectId(req.params.id) }
+        );
+
+        if (!order) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+
+        // Update order status in database
         const result = await db.collection('orders').updateOne(
             { _id: new ObjectId(req.params.id) },
             { 
@@ -153,7 +177,22 @@ router.patch('/:id/status', async (req, res) => {
             return res.status(404).json({ error: 'Order not found' });
         }
 
-        res.json({ message: 'Status updated successfully' });
+        // Send email notification for civil orders (orders without companyId)
+        if (!order.companyId) {
+            const emailResult = await sendOrderStatusEmail(order, status);
+            console.log('\n📧 Email Result:');
+            console.log(`   Success: ${emailResult.success}`);
+            console.log(`   Message: ${emailResult.message}`);
+            if (!emailResult.success && emailResult.error) {
+                console.log(`   Error Code: ${emailResult.error}`);
+            }
+            console.log();
+        }
+
+        res.json({ 
+            message: 'Status updated successfully',
+            emailSent: !order.companyId 
+        });
     } catch (error) {
         console.error('Error updating status:', error);
         res.status(500).json({ error: 'Failed to update status' });
