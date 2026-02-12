@@ -1029,7 +1029,7 @@ const CompanyDashboard = () => {
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
                                         <div className="form-group">
                                             <label className="form-label">Order ID</label>
-                                            <input type="text" name="orderId" value={orderForm.orderId} onChange={handleOrderInputChange} className="form-input" readOnly />
+                                            <input type="text" name="orderId" value={orderForm.orderId} className="form-input" readOnly style={{ backgroundColor: '#f1f5f9', cursor: 'not-allowed' }} />
                                         </div>
                                         <div className="form-group">
                                             <label className="form-label">Position *</label>

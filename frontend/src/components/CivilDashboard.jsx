@@ -834,10 +834,10 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                                                 type="text"
                                                 name="orderId"
                                                 value={formData.orderId}
-                                                onChange={handleInputChange}
                                                 className="form-input"
                                                 placeholder="ORD001"
-                                                required
+                                                readOnly
+                                                style={{ backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
                                             />
                                         </div>
                                         <div className="form-group">
