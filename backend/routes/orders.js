@@ -115,6 +115,22 @@ router.post('/', async (req, res) => {
 
         const result = await db.collection('orders').insertOne(newOrder);
         
+        // Increment the order counter ONLY after successful order creation
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
+        const currentMonthKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+        
+        const counterCollection = db.collection('order_counters');
+        await counterCollection.updateOne(
+            { _id: 'order_counter' },
+            { 
+                $inc: { count: 1 },
+                $set: { lastMonth: currentMonthKey }
+            },
+            { upsert: true }
+        );
+        
         // Send email notification for civil orders (orders without companyId)
         if (!newOrder.companyId && newOrder.email && newOrder.email.trim()) {
             const orderWithId = { ...newOrder, _id: result.insertedId };
@@ -241,7 +257,7 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
-// Generate next order ID
+// Generate next order ID (peek only - does not increment counter)
 router.get('/generate/next-id', async (req, res) => {
     try {
         const db = getDB();
@@ -260,13 +276,14 @@ router.get('/generate/next-id', async (req, res) => {
         let shouldReset = false;
         
         if (!counter) {
-            // First time initialization
+            // First time initialization - don't increment yet, just show what the first ID will be
             await counterCollection.insertOne({
                 _id: 'order_counter',
                 lastMonth: currentMonthKey,
                 count: 0,
                 lastResetDate: new Date()
             });
+            nextId = 'ORD001';
         } else if (counter.lastMonth !== currentMonthKey) {
             // New month detected - reset counter
             shouldReset = true;
@@ -280,17 +297,12 @@ router.get('/generate/next-id', async (req, res) => {
                     }
                 }
             );
+            nextId = 'ORD001';
+        } else {
+            // Just peek at what the next ID will be (current count + 1)
+            const nextNum = counter.count + 1;
+            nextId = `ORD${String(nextNum).padStart(3, '0')}`;
         }
-        
-        // Get the next ID
-        const updatedCounter = await counterCollection.findOneAndUpdate(
-            { _id: 'order_counter' },
-            { $inc: { count: 1 } },
-            { returnDocument: 'after' }
-        );
-        
-        const nextNum = updatedCounter.value.count;
-        nextId = `ORD${String(nextNum).padStart(3, '0')}`;
         
         res.json({ 
             nextId,
