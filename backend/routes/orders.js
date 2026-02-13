@@ -49,6 +49,105 @@ router.get('/civil', async (req, res) => {
     }
 });
 
+// Search for previous customers by name (for auto-fill)
+router.get('/search/customers', async (req, res) => {
+    try {
+        const db = getDB();
+        const { name } = req.query;
+
+        if (!name || name.length < 2) {
+            return res.json([]);
+        }
+
+        // Search for customers with matching names (case-insensitive)
+        // Only search civil orders (orders without companyId)
+        const customers = await db.collection('orders').aggregate([
+            {
+                $match: {
+                    companyId: { $exists: false },
+                    name: { $regex: name, $options: 'i' }
+                }
+            },
+            {
+                $sort: { createdAt: -1 }
+            },
+            {
+                $group: {
+                    _id: { $toLower: '$name' },
+                    name: { $first: '$name' },
+                    phone: { $first: '$phone' },
+                    email: { $first: '$email' },
+                    shirt: { $first: '$shirt' },
+                    pant: { $first: '$pant' },
+                    lastOrderDate: { $first: '$date' },
+                    orderCount: { $sum: 1 }
+                }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    name: 1,
+                    phone: 1,
+                    email: 1,
+                    shirt: 1,
+                    pant: 1,
+                    lastOrderDate: 1,
+                    orderCount: 1
+                }
+            },
+            {
+                $limit: 5
+            }
+        ]).toArray();
+
+        res.json(customers);
+    } catch (error) {
+        console.error('Error searching customers:', error);
+        res.status(500).json({ error: 'Failed to search customers' });
+    }
+});
+
+// Preview next order ID (does NOT increment counter - for display only)
+// IMPORTANT: This route must be defined BEFORE /:id to avoid being caught by it
+router.get('/generate/next-id', async (req, res) => {
+    try {
+        const db = getDB();
+        
+        // Get current month and year
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
+        const currentMonthKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+        
+        const counterCollection = db.collection('order_counters');
+        const counter = await counterCollection.findOne({ _id: 'order_counter' });
+        
+        let previewId = 'ORD001';
+        let shouldReset = false;
+        
+        if (!counter) {
+            previewId = 'ORD001';
+        } else if (counter.lastMonth !== currentMonthKey) {
+            // New month - preview will be ORD001
+            shouldReset = true;
+            previewId = 'ORD001';
+        } else {
+            // Preview the next ID without incrementing
+            const nextNum = counter.count + 1;
+            previewId = `ORD${String(nextNum).padStart(3, '0')}`;
+        }
+        
+        res.json({ 
+            nextId: previewId,
+            monthReset: shouldReset,
+            currentMonth: currentMonthKey
+        });
+    } catch (error) {
+        console.error('Error previewing order ID:', error);
+        res.status(500).json({ error: 'Failed to preview order ID' });
+    }
+});
+
 // Get single order by ID
 router.get('/:id', async (req, res) => {
     try {
@@ -67,33 +166,77 @@ router.get('/:id', async (req, res) => {
     }
 });
 
+// Helper function to generate order ID atomically (only during order creation)
+const generateOrderIdAtomic = async (db) => {
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+    const currentMonthKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+    
+    const counterCollection = db.collection('order_counters');
+    const counter = await counterCollection.findOne({ _id: 'order_counter' });
+    
+    if (!counter) {
+        // First time initialization
+        await counterCollection.insertOne({
+            _id: 'order_counter',
+            lastMonth: currentMonthKey,
+            count: 0,
+            lastResetDate: new Date()
+        });
+    } else if (counter.lastMonth !== currentMonthKey) {
+        // New month detected - reset counter
+        await counterCollection.updateOne(
+            { _id: 'order_counter' },
+            { 
+                $set: { 
+                    lastMonth: currentMonthKey,
+                    count: 0,
+                    lastResetDate: new Date()
+                }
+            }
+        );
+    }
+    
+    // Atomically increment and get the next ID
+    const updatedCounter = await counterCollection.findOneAndUpdate(
+        { _id: 'order_counter' },
+        { $inc: { count: 1 } },
+        { returnDocument: 'after' }
+    );
+    
+    const nextNum = updatedCounter.value.count;
+    return `ORD${String(nextNum).padStart(3, '0')}`;
+};
+
 // Create new order
 router.post('/', async (req, res) => {
     try {
         const db = getDB();
         const { 
-            orderId, 
             name, 
             phone, 
             email, 
             noOfSets,
             shirtAmount,
             pantAmount,
+            advanceAmount,
             paymentMethod,
             shirt,
             pant
         } = req.body;
 
         // Validate required fields
-        if (!orderId || !name || !phone) {
-            return res.status(400).json({ error: 'Order ID, name, and phone are required' });
+        if (!name || !phone) {
+            return res.status(400).json({ error: 'Name and phone are required' });
         }
 
-        // Check if orderId already exists
-        const existingOrder = await db.collection('orders').findOne({ orderId });
-        if (existingOrder) {
-            return res.status(400).json({ error: 'Order ID already exists' });
-        }
+        // Generate order ID atomically - only increments when order is actually created
+        const orderId = await generateOrderIdAtomic(db);
+
+        const totalAmount = ((parseFloat(shirtAmount) || 500) + (parseFloat(pantAmount) || 400)) * (parseInt(noOfSets) || 1);
+        const advancePaid = parseFloat(advanceAmount) || 0;
+        const remainingAmount = Math.max(0, totalAmount - advancePaid);
 
         const newOrder = {
             orderId,
@@ -103,7 +246,9 @@ router.post('/', async (req, res) => {
             noOfSets: parseInt(noOfSets) || 1,
             shirtAmount: parseFloat(shirtAmount) || 500,
             pantAmount: parseFloat(pantAmount) || 400,
-            totalAmount: ((parseFloat(shirtAmount) || 500) + (parseFloat(pantAmount) || 400)) * (parseInt(noOfSets) || 1),
+            totalAmount,
+            advanceAmount: advancePaid,
+            remainingAmount,
             paymentMethod: paymentMethod || 'Cash',
             shirt: shirt || {},
             pant: pant || {},
@@ -254,64 +399,6 @@ router.delete('/:id', async (req, res) => {
     } catch (error) {
         console.error('Error deleting order:', error);
         res.status(500).json({ error: 'Failed to delete order' });
-    }
-});
-
-// Generate next order ID (peek only - does not increment counter)
-router.get('/generate/next-id', async (req, res) => {
-    try {
-        const db = getDB();
-        
-        // Get current month and year
-        const now = new Date();
-        const currentMonth = now.getMonth() + 1; // 1-12
-        const currentYear = now.getFullYear();
-        const currentMonthKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-        
-        // Check if we need to reset for new month
-        const counterCollection = db.collection('order_counters');
-        const counter = await counterCollection.findOne({ _id: 'order_counter' });
-        
-        let nextId = 'ORD001';
-        let shouldReset = false;
-        
-        if (!counter) {
-            // First time initialization - don't increment yet, just show what the first ID will be
-            await counterCollection.insertOne({
-                _id: 'order_counter',
-                lastMonth: currentMonthKey,
-                count: 0,
-                lastResetDate: new Date()
-            });
-            nextId = 'ORD001';
-        } else if (counter.lastMonth !== currentMonthKey) {
-            // New month detected - reset counter
-            shouldReset = true;
-            await counterCollection.updateOne(
-                { _id: 'order_counter' },
-                { 
-                    $set: { 
-                        lastMonth: currentMonthKey,
-                        count: 0,
-                        lastResetDate: new Date()
-                    }
-                }
-            );
-            nextId = 'ORD001';
-        } else {
-            // Just peek at what the next ID will be (current count + 1)
-            const nextNum = counter.count + 1;
-            nextId = `ORD${String(nextNum).padStart(3, '0')}`;
-        }
-        
-        res.json({ 
-            nextId,
-            monthReset: shouldReset,
-            currentMonth: currentMonthKey
-        });
-    } catch (error) {
-        console.error('Error generating order ID:', error);
-        res.status(500).json({ error: 'Failed to generate order ID' });
     }
 });
 

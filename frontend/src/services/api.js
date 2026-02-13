@@ -75,6 +75,13 @@ export const ordersAPI = {
         const response = await fetch(`${API_BASE_URL}/orders/generate/next-id`);
         if (!response.ok) throw new Error('Failed to generate order ID');
         return response.json();
+    },
+
+    // Search for previous customers by name
+    searchCustomers: async (searchName) => {
+        const response = await fetch(`${API_BASE_URL}/orders/search/customers?name=${encodeURIComponent(searchName)}`);
+        if (!response.ok) throw new Error('Failed to search customers');
+        return response.json();
     }
 };
 
