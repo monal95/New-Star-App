@@ -23,23 +23,23 @@ The backend provides a comprehensive API for the Smart Tailoring Management Syst
 
 1. Navigate to the backend directory:
 
-   ``ash
+   ```bash
    cd backend
-   ``
+   ```
 
 2. Install dependencies:
 
-   ``ash
+   ```bash
    npm install
-   ``
+   ```
 
 3. Create a .env file in the backend directory with the following configuration:
 
-   ``env
+   ```env
    PORT=5000
    MONGODB_URI=mongodb://localhost:27017/smart-tailoring
    NODE_ENV=development
-   ``
+   ```
 
 ## Running the Server
 
@@ -47,9 +47,9 @@ The backend provides a comprehensive API for the Smart Tailoring Management Syst
 
 Run with auto-reload on file changes:
 
-``ash
+```bash
 npm run dev
-``
+```
 
 The server will start on http://localhost:5000 (or the port specified in .env)
 
@@ -57,26 +57,26 @@ The server will start on http://localhost:5000 (or the port specified in .env)
 
 Run the server in production:
 
-``ash
+```bash
 npm start
-``
+```
 
 ## Project Structure
 
-``
+```
 backend/
- api/              # API route handlers and controllers
- config/           # Configuration files
-    db.js        # Database connection setup
- middleware/       # Express middleware
- models/          # MongoDB data models/schemas
- routes/          # API route definitions
-    companies.js
-    companyEmployees.js
-    orders.js
- server.js        # Entry point
- package.json
-``
+├── api/              # API route handlers and controllers
+├── config/           # Configuration files
+│   └── db.js         # Database connection setup
+├── middleware/       # Express middleware
+├── models/           # MongoDB data models/schemas
+├── routes/           # API route definitions
+│   ├── companies.js
+│   ├── companyEmployees.js
+│   └── orders.js
+├── server.js         # Entry point
+└── package.json
+```
 
 ## API Endpoints
 
@@ -136,4 +136,4 @@ The API returns standard HTTP status codes:
 
 ## License
 
-MIT
+MIT License
