@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
     Building2, Clock, CheckCircle, X, Shirt, PanelBottom, Eye, Plus, Save, Calendar,
-    Users, ShieldCheck, UserCog, Briefcase, UserCheck, Home, ArrowLeft, Phone, Mail, MapPin, Check, XCircle
+    Users, ShieldCheck, UserCog, Briefcase, UserCheck, Home, ArrowLeft, Phone, Mail, MapPin, Check, XCircle, Zap, Trash2, AlertTriangle
 } from 'lucide-react';
-import { companiesAPI, employeesAPI } from '../services/api';
+import { companiesAPI, employeesAPI, labourAPI, workAssignmentsAPI } from '../services/api';
 import Toast from './Toast';
 
 // Position types with icons
@@ -37,7 +37,13 @@ const CompanyDashboard = () => {
     const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
     const [showCreateOrderModal, setShowCreateOrderModal] = useState(false);
     const [showMeasurementsModal, setShowMeasurementsModal] = useState(false);
+    const [showCompanyInfoModal, setShowCompanyInfoModal] = useState(false);
     const [selectedOrder, setSelectedOrder] = useState(null);
+    
+    // Delete company modal states
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [companyToDelete, setCompanyToDelete] = useState(null);
+    const [deleteConfirmText, setDeleteConfirmText] = useState('');
     
     // Form states
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,6 +73,18 @@ const CompanyDashboard = () => {
         noOfSets: 1,
         shirt: { length: '', shoulder: '', sleeve: '', chest: '', collar: '', waist: '' },
         pant: { length: '', waist: '', hip: '', thigh: '', knee: '', bottom: '' }
+    });
+
+    // Work Assignment State
+    const [showAssignModal, setShowAssignModal] = useState(false);
+    const [labourList, setLabourList] = useState([]);
+    const [loadingLabour, setLoadingLabour] = useState(false);
+    const [availableWorkTypes, setAvailableWorkTypes] = useState(['Pant', 'Shirt', 'Ironing', 'Embroidery']);
+    const [assignmentData, setAssignmentData] = useState({
+        labourId: '',
+        workType: '',
+        quantity: 1,
+        customWage: ''
     });
 
     // Fetch companies
@@ -234,6 +252,31 @@ const CompanyDashboard = () => {
         }
     };
 
+    // Delete company handler
+    const handleDeleteCompany = async () => {
+        if (!companyToDelete) return;
+        
+        const expectedText = `DELETE ${companyToDelete.name}`;
+        if (deleteConfirmText !== expectedText) {
+            setToast({ show: true, message: 'Please type the confirmation text correctly', type: 'error' });
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            await companiesAPI.delete(companyToDelete._id);
+            setShowDeleteModal(false);
+            setCompanyToDelete(null);
+            setDeleteConfirmText('');
+            setToast({ show: true, message: `Company "${companyToDelete.name}" and all associated data deleted successfully`, type: 'success' });
+            fetchCompanies();
+        } catch (error) {
+            setToast({ show: true, message: error.message || 'Failed to delete company', type: 'error' });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     // Order form handlers
     const handleOrderInputChange = (e) => {
         const { name, value } = e.target;
@@ -303,6 +346,83 @@ const CompanyDashboard = () => {
         }
     };
 
+    // Load labour list for assignment
+    const loadLabourList = async () => {
+        try {
+            setLoadingLabour(true);
+            const labours = await labourAPI.getAll();
+            setLabourList(labours || []);
+        } catch (error) {
+            console.error('Error loading labour list:', error);
+            setToast({ show: true, message: 'Failed to load labour list', type: 'error' });
+        } finally {
+            setLoadingLabour(false);
+        }
+    };
+
+    // Fetch already assigned work types for an order
+    const fetchAssignedWorkTypes = async (orderId) => {
+        try {
+            const assignments = await workAssignmentsAPI.getByOrder(orderId);
+            const workTypes = assignments.map(a => a.workType);
+            setAvailableWorkTypes(['Pant', 'Shirt', 'Ironing', 'Embroidery'].filter(wt => !workTypes.includes(wt)));
+        } catch (error) {
+            console.error('Error fetching assigned work types:', error);
+            setAvailableWorkTypes(['Pant', 'Shirt', 'Ironing', 'Embroidery']);
+        }
+    };
+
+    // Open assignment modal
+    const handleOpenAssignModal = async (order) => {
+        setSelectedOrder(order);
+        setAssignmentData({ labourId: '', workType: '', quantity: 1, customWage: '' });
+        await fetchAssignedWorkTypes(order.orderId || order._id);
+        await loadLabourList();
+        setShowAssignModal(true);
+    };
+
+    // Close assignment modal
+    const handleCloseAssignModal = () => {
+        setShowAssignModal(false);
+        setSelectedOrder(null);
+        setAssignmentData({ labourId: '', workType: '', quantity: 1, customWage: '' });
+    };
+
+    // Submit work assignment
+    const handleSubmitAssignment = async (e) => {
+        e.preventDefault();
+        
+        if (!assignmentData.labourId || !assignmentData.workType || !assignmentData.quantity) {
+            setToast({ show: true, message: 'Please fill all required fields', type: 'error' });
+            return;
+        }
+
+        try {
+            setIsSubmitting(true);
+            const selectedLabour = labourList.find(l => l._id === assignmentData.labourId);
+            
+            await workAssignmentsAPI.create({
+                labourId: assignmentData.labourId,
+                orderId: selectedOrder.orderId || selectedOrder._id,
+                workType: assignmentData.workType,
+                quantity: parseInt(assignmentData.quantity),
+                customWage: assignmentData.customWage ? parseFloat(assignmentData.customWage) : null,
+                orderCustomerName: selectedOrder.name,
+                orderDate: selectedOrder.date || new Date().toISOString().split('T')[0]
+            });
+
+            setToast({ show: true, message: `Work assigned to ${selectedLabour?.name}`, type: 'success' });
+            handleCloseAssignModal();
+            
+            // Refresh the assignment data for this order
+            await fetchAssignedWorkTypes(selectedOrder.orderId || selectedOrder._id);
+        } catch (error) {
+            setToast({ show: true, message: error.message || 'Failed to assign work', type: 'error' });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     // ========== COMPANIES LIST VIEW ==========
     if (view === 'companies') {
         return (
@@ -341,14 +461,14 @@ const CompanyDashboard = () => {
                                 {companies.map(company => (
                                     <div 
                                         key={company._id}
-                                        onClick={() => handleCompanySelect(company)}
                                         style={{
                                             padding: '1.5rem',
                                             backgroundColor: '#f8fafc',
                                             borderRadius: '12px',
                                             border: '2px solid #e2e8f0',
                                             cursor: 'pointer',
-                                            transition: 'all 0.2s ease'
+                                            transition: 'all 0.2s ease',
+                                            position: 'relative'
                                         }}
                                         onMouseEnter={e => {
                                             e.currentTarget.style.borderColor = '#1e3a8a';
@@ -359,33 +479,68 @@ const CompanyDashboard = () => {
                                             e.currentTarget.style.backgroundColor = '#f8fafc';
                                         }}
                                     >
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                                            <div style={{ 
-                                                width: '48px', height: '48px', borderRadius: '12px',
-                                                backgroundColor: '#1e3a8a', color: 'white',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                            }}>
-                                                <Building2 size={24} />
+                                        {/* Delete Button */}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setCompanyToDelete(company);
+                                                setDeleteConfirmText('');
+                                                setShowDeleteModal(true);
+                                            }}
+                                            style={{
+                                                position: 'absolute',
+                                                top: '0.75rem',
+                                                right: '0.75rem',
+                                                backgroundColor: 'transparent',
+                                                border: 'none',
+                                                padding: '0.5rem',
+                                                borderRadius: '8px',
+                                                cursor: 'pointer',
+                                                color: '#94a3b8',
+                                                transition: 'all 0.2s ease'
+                                            }}
+                                            onMouseEnter={e => {
+                                                e.currentTarget.style.backgroundColor = '#fee2e2';
+                                                e.currentTarget.style.color = '#ef4444';
+                                            }}
+                                            onMouseLeave={e => {
+                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                e.currentTarget.style.color = '#94a3b8';
+                                            }}
+                                            title="Delete Company"
+                                        >
+                                            <Trash2 size={18} />
+                                        </button>
+                                        
+                                        <div onClick={() => handleCompanySelect(company)}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                                                <div style={{ 
+                                                    width: '48px', height: '48px', borderRadius: '12px',
+                                                    backgroundColor: '#1e3a8a', color: 'white',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                }}>
+                                                    <Building2 size={24} />
+                                                </div>
+                                                <div>
+                                                    <h4 style={{ margin: 0, color: '#1e3a8a', fontWeight: '600' }}>{company.name}</h4>
+                                                    <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>
+                                                        {company.totalOrders || 0} Orders
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <h4 style={{ margin: 0, color: '#1e3a8a', fontWeight: '600' }}>{company.name}</h4>
-                                                <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>
-                                                    {company.totalOrders || 0} Orders
-                                                </p>
-                                            </div>
+                                            {company.address && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: '#64748b' }}>
+                                                    <MapPin size={14} />
+                                                    <span>{company.address}</span>
+                                                </div>
+                                            )}
+                                            {company.email && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: '#64748b', marginTop: '0.25rem' }}>
+                                                    <Mail size={14} />
+                                                    <span>{company.email}</span>
+                                                </div>
+                                            )}
                                         </div>
-                                        {company.address && (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: '#64748b' }}>
-                                                <MapPin size={14} />
-                                                <span>{company.address}</span>
-                                            </div>
-                                        )}
-                                        {company.email && (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: '#64748b', marginTop: '0.25rem' }}>
-                                                <Mail size={14} />
-                                                <span>{company.email}</span>
-                                            </div>
-                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -506,6 +661,98 @@ const CompanyDashboard = () => {
                         </div>
                     </div>
                 )}
+
+                {/* Delete Company Confirmation Modal */}
+                {showDeleteModal && companyToDelete && (
+                    <div className="modal-overlay" onClick={() => { setShowDeleteModal(false); setCompanyToDelete(null); setDeleteConfirmText(''); }}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                            <div className="modal-header" style={{ backgroundColor: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#dc2626' }}>
+                                    <AlertTriangle size={20} />
+                                    Delete Company
+                                </h3>
+                                <button className="btn btn-sm btn-secondary" onClick={() => { setShowDeleteModal(false); setCompanyToDelete(null); setDeleteConfirmText(''); }}>
+                                    <X size={18} />
+                                </button>
+                            </div>
+                            <div className="modal-body">
+                                <div style={{ 
+                                    padding: '1rem', 
+                                    backgroundColor: '#fef2f2', 
+                                    borderRadius: '8px', 
+                                    marginBottom: '1.5rem',
+                                    border: '1px solid #fecaca'
+                                }}>
+                                    <p style={{ margin: 0, color: '#dc2626', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <AlertTriangle size={16} />
+                                        Warning: This action cannot be undone!
+                                    </p>
+                                </div>
+                                
+                                <p style={{ marginBottom: '1rem', color: '#374151' }}>
+                                    Are you sure you want to delete <strong style={{ color: '#1e3a8a' }}>"{companyToDelete.name}"</strong>?
+                                </p>
+                                
+                                <p style={{ marginBottom: '1rem', color: '#6b7280', fontSize: '0.875rem' }}>
+                                    This will permanently delete:
+                                </p>
+                                <ul style={{ marginBottom: '1.5rem', color: '#6b7280', fontSize: '0.875rem', paddingLeft: '1.5rem' }}>
+                                    <li>All company information</li>
+                                    <li>All employee/customer orders ({companyToDelete.totalOrders || 0} orders)</li>
+                                    <li>All associated measurements and data</li>
+                                </ul>
+
+                                <div className="form-group">
+                                    <label className="form-label" style={{ color: '#374151' }}>
+                                        To confirm, type: <strong style={{ color: '#dc2626', fontFamily: 'monospace' }}>DELETE {companyToDelete.name}</strong>
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        value={deleteConfirmText}
+                                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                                        className="form-input" 
+                                        placeholder={`DELETE ${companyToDelete.name}`}
+                                        style={{ 
+                                            fontFamily: 'monospace',
+                                            borderColor: deleteConfirmText === `DELETE ${companyToDelete.name}` ? '#16a34a' : '#e2e8f0'
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                            <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                                <button 
+                                    type="button" 
+                                    className="btn btn-secondary" 
+                                    onClick={() => { setShowDeleteModal(false); setCompanyToDelete(null); setDeleteConfirmText(''); }}
+                                    disabled={isSubmitting}
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="button" 
+                                    onClick={handleDeleteCompany}
+                                    disabled={isSubmitting || deleteConfirmText !== `DELETE ${companyToDelete.name}`}
+                                    style={{
+                                        backgroundColor: deleteConfirmText === `DELETE ${companyToDelete.name}` ? '#dc2626' : '#e5e7eb',
+                                        color: deleteConfirmText === `DELETE ${companyToDelete.name}` ? 'white' : '#9ca3af',
+                                        border: 'none',
+                                        padding: '0.625rem 1rem',
+                                        borderRadius: '6px',
+                                        fontWeight: '500',
+                                        cursor: deleteConfirmText === `DELETE ${companyToDelete.name}` ? 'pointer' : 'not-allowed',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
+                                    <Trash2 size={18} />
+                                    {isSubmitting ? 'Deleting...' : 'Delete Company'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
@@ -541,7 +788,7 @@ const CompanyDashboard = () => {
                                 </div>
                             </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
                             {selectedCompany?.landlineNumber && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: '#64748b' }}>
                                     <Phone size={14} /> {selectedCompany.landlineNumber}
@@ -552,6 +799,14 @@ const CompanyDashboard = () => {
                                     <Mail size={14} /> {selectedCompany.email}
                                 </div>
                             )}
+                            <button
+                                onClick={() => setShowCompanyInfoModal(true)}
+                                className="btn btn-primary"
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem' }}
+                            >
+                                <Eye size={16} />
+                                Company Info
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -734,9 +989,25 @@ const CompanyDashboard = () => {
                                             <td>{order.noOfSets || 1}</td>
                                             <td>{order.date}</td>
                                             <td>
-                                                <button className="btn btn-sm btn-secondary" onClick={() => viewMeasurements(order)}>
-                                                    <Eye size={14} /> View
-                                                </button>
+                                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                    <button className="btn btn-sm btn-secondary" onClick={() => viewMeasurements(order)}>
+                                                        <Eye size={14} /> View
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-sm"
+                                                        style={{
+                                                            backgroundColor: availableWorkTypes.length === 0 ? '#10b981' : '#3b82f6',
+                                                            color: 'white',
+                                                            border: 'none',
+                                                            cursor: availableWorkTypes.length === 0 ? 'not-allowed' : 'pointer',
+                                                            opacity: availableWorkTypes.length === 0 ? 0.7 : 1
+                                                        }}
+                                                        onClick={() => handleOpenAssignModal(order)}
+                                                        disabled={availableWorkTypes.length === 0}
+                                                    >
+                                                        {availableWorkTypes.length === 0 ? '✓ Assigned' : 'Assign'}
+                                                    </button>
+                                                </div>
                                             </td>
                                             <td>
                                                 <span className={`badge ${order.status === 'Delivered' || order.status === 'Moved to stitching' ? 'badge-success' : order.status === 'In Progress' ? 'badge-info' : 'badge-warning'}`}>
@@ -924,7 +1195,7 @@ const CompanyDashboard = () => {
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
                                         <div className="form-group">
                                             <label className="form-label">Order ID</label>
-                                            <input type="text" name="orderId" value={orderForm.orderId} onChange={handleOrderInputChange} className="form-input" readOnly />
+                                            <input type="text" name="orderId" value={orderForm.orderId} className="form-input" readOnly style={{ backgroundColor: '#f1f5f9', cursor: 'not-allowed' }} />
                                         </div>
                                         <div className="form-group">
                                             <label className="form-label">Position *</label>
@@ -1047,6 +1318,257 @@ const CompanyDashboard = () => {
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Company Info Modal */}
+            {showCompanyInfoModal && selectedCompany && (
+                <div className="modal-overlay" onClick={() => setShowCompanyInfoModal(false)}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+                        <div className="modal-header">
+                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Building2 size={20} />
+                                Company Information
+                            </h3>
+                            <button className="btn btn-sm btn-secondary" onClick={() => setShowCompanyInfoModal(false)}>
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            {/* Company Basic Details */}
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#1e3a8a', fontSize: '1rem', fontWeight: '600' }}>
+                                    <Building2 size={18} />
+                                    Company Details
+                                </h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                    <div style={{ padding: '0.75rem', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>Company Name</span>
+                                        <span style={{ fontWeight: '600', color: '#1e293b' }}>{selectedCompany.name || '-'}</span>
+                                    </div>
+                                    <div style={{ padding: '0.75rem', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>GST Number</span>
+                                        <span style={{ fontWeight: '600', color: '#1e293b' }}>{selectedCompany.gstNumber || '-'}</span>
+                                    </div>
+                                    <div style={{ padding: '0.75rem', backgroundColor: '#f8fafc', borderRadius: '8px', gridColumn: 'span 2' }}>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>Address</span>
+                                        <span style={{ fontWeight: '600', color: '#1e293b' }}>{selectedCompany.address || '-'}</span>
+                                    </div>
+                                    <div style={{ padding: '0.75rem', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>Email</span>
+                                        <span style={{ fontWeight: '600', color: '#1e293b' }}>{selectedCompany.email || '-'}</span>
+                                    </div>
+                                    <div style={{ padding: '0.75rem', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>Landline</span>
+                                        <span style={{ fontWeight: '600', color: '#1e293b' }}>{selectedCompany.landlineNumber || '-'}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* HR Details */}
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#8b5cf6', fontSize: '1rem', fontWeight: '600' }}>
+                                    <UserCog size={18} />
+                                    HR Information
+                                </h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                    <div style={{ padding: '0.75rem', backgroundColor: '#f5f3ff', borderRadius: '8px' }}>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>HR Name</span>
+                                        <span style={{ fontWeight: '600', color: '#1e293b' }}>{selectedCompany.hrName || '-'}</span>
+                                    </div>
+                                    <div style={{ padding: '0.75rem', backgroundColor: '#f5f3ff', borderRadius: '8px' }}>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>HR Phone</span>
+                                        <span style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            {selectedCompany.hrPhone ? (
+                                                <>
+                                                    <Phone size={14} style={{ color: '#8b5cf6' }} />
+                                                    {selectedCompany.hrPhone}
+                                                </>
+                                            ) : '-'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Manager Details */}
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#10b981', fontSize: '1rem', fontWeight: '600' }}>
+                                    <Briefcase size={18} />
+                                    Manager Information
+                                </h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                    <div style={{ padding: '0.75rem', backgroundColor: '#ecfdf5', borderRadius: '8px' }}>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>Manager Name</span>
+                                        <span style={{ fontWeight: '600', color: '#1e293b' }}>{selectedCompany.managerName || '-'}</span>
+                                    </div>
+                                    <div style={{ padding: '0.75rem', backgroundColor: '#ecfdf5', borderRadius: '8px' }}>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>Manager Phone</span>
+                                        <span style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            {selectedCompany.managerPhone ? (
+                                                <>
+                                                    <Phone size={14} style={{ color: '#10b981' }} />
+                                                    {selectedCompany.managerPhone}
+                                                </>
+                                            ) : '-'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Statistics */}
+                            <div>
+                                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#3b82f6', fontSize: '1rem', fontWeight: '600' }}>
+                                    <Users size={18} />
+                                    Statistics
+                                </h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+                                    <div style={{ padding: '0.75rem', backgroundColor: '#eff6ff', borderRadius: '8px', textAlign: 'center' }}>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>Estimated Orders</span>
+                                        <span style={{ fontWeight: '700', color: '#3b82f6', fontSize: '1.25rem' }}>{selectedCompany.estimatedOrders || 0}</span>
+                                    </div>
+                                    <div style={{ padding: '0.75rem', backgroundColor: '#eff6ff', borderRadius: '8px', textAlign: 'center' }}>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>Total Orders</span>
+                                        <span style={{ fontWeight: '700', color: '#3b82f6', fontSize: '1.25rem' }}>{selectedCompany.totalOrders || 0}</span>
+                                    </div>
+                                    <div style={{ padding: '0.75rem', backgroundColor: '#eff6ff', borderRadius: '8px', textAlign: 'center' }}>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>Status</span>
+                                        <span className={`badge ${selectedCompany.status === 'Active' ? 'badge-success' : 'badge-warning'}`} style={{ marginTop: '0.25rem' }}>
+                                            {selectedCompany.status || 'Active'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Work Assignment Modal */}
+            {showAssignModal && selectedOrder && (
+                <div className="modal-overlay" onClick={handleCloseAssignModal}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                        <div className="modal-header">
+                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Zap size={20} />
+                                Assign Work - {selectedOrder.name}
+                            </h3>
+                            <button className="btn btn-sm btn-secondary" onClick={handleCloseAssignModal}>
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleSubmitAssignment}>
+                            <div className="modal-body">
+                                {/* Labour Selection */}
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="form-label">Select Labour *</label>
+                                    <select
+                                        value={assignmentData.labourId}
+                                        onChange={(e) => setAssignmentData({ ...assignmentData, labourId: e.target.value })}
+                                        className="form-input"
+                                        disabled={loadingLabour || isSubmitting}
+                                    >
+                                        <option value="">Choose a labour</option>
+                                        {labourList.map(labour => (
+                                            <option key={labour._id} value={labour._id}>
+                                                {labour.name} ({labour.category})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Work Type Selection */}
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="form-label">Work Type *</label>
+                                    {availableWorkTypes.length === 0 ? (
+                                        <div style={{
+                                            padding: '1rem',
+                                            backgroundColor: '#dcfce7',
+                                            borderRadius: '6px',
+                                            color: '#15803d',
+                                            fontSize: '0.9rem',
+                                            textAlign: 'center'
+                                        }}>
+                                            ✓ All work types have been assigned
+                                        </div>
+                                    ) : (
+                                        <select
+                                            value={assignmentData.workType}
+                                            onChange={(e) => setAssignmentData({ ...assignmentData, workType: e.target.value })}
+                                            className="form-input"
+                                            disabled={isSubmitting}
+                                        >
+                                            <option value="">
+                                                Select work type ({availableWorkTypes.length} available)
+                                            </option>
+                                            {availableWorkTypes.map(workType => (
+                                                <option key={workType} value={workType}>
+                                                    {workType}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    )}
+                                </div>
+
+                                {/* Quantity */}
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="form-label">Quantity *</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={assignmentData.quantity}
+                                        onChange={(e) => setAssignmentData({ ...assignmentData, quantity: parseInt(e.target.value) })}
+                                        className="form-input"
+                                        disabled={isSubmitting}
+                                    />
+                                </div>
+
+                                {/* Custom Wage Override */}
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="form-label">Custom Wage (Optional)</label>
+                                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>
+                                        Leave empty to use standard rates
+                                    </div>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.5"
+                                        placeholder="Enter custom wage per unit"
+                                        value={assignmentData.customWage}
+                                        onChange={(e) => setAssignmentData({ ...assignmentData, customWage: e.target.value })}
+                                        className="form-input"
+                                        disabled={isSubmitting}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div style={{ 
+                                padding: '1rem 1.5rem', 
+                                borderTop: '1px solid #e2e8f0',
+                                display: 'flex',
+                                justifyContent: 'flex-end',
+                                gap: '1rem'
+                            }}>
+                                <button 
+                                    type="button" 
+                                    className="btn btn-secondary" 
+                                    onClick={handleCloseAssignModal}
+                                    disabled={isSubmitting}
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    className="btn btn-primary"
+                                    disabled={isSubmitting || availableWorkTypes.length === 0 || !assignmentData.labourId || !assignmentData.workType || !assignmentData.quantity}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                                >
+                                    <Zap size={18} />
+                                    {isSubmitting ? 'Assigning...' : 'Assign Work'}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

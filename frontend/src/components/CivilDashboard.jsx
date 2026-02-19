@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Users, Clock, CheckCircle, IndianRupee, X, Shirt, PanelBottom, Eye, Plus, Save, Calendar, AlertCircle } from 'lucide-react';
-import { ordersAPI } from '../services/api';
+import { Users, Clock, CheckCircle, IndianRupee, X, Shirt, PanelBottom, Eye, Plus, Save, Calendar, AlertCircle, Zap } from 'lucide-react';
+import { ordersAPI, labourAPI, workAssignmentsAPI } from '../services/api';
 import Toast from './Toast';
 
 const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
@@ -27,6 +27,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
         noOfSets: 1,
         shirtAmount: 500,
         pantAmount: 400,
+        advanceAmount: 0,
         paymentMethod: 'Cash',
         shirt: {
             length: '',
@@ -44,6 +45,23 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
             knee: '',
             bottom: ''
         }
+    });
+
+    // Customer suggestions state
+    const [customerSuggestions, setCustomerSuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [searchingCustomers, setSearchingCustomers] = useState(false);
+
+    // Work Assignment State
+    const [showAssignModal, setShowAssignModal] = useState(false);
+    const [labourList, setLabourList] = useState([]);
+    const [loadingLabour, setLoadingLabour] = useState(false);
+    const [availableWorkTypes, setAvailableWorkTypes] = useState(['Pant', 'Shirt', 'Ironing', 'Embroidery']);
+    const [assignmentData, setAssignmentData] = useState({
+        labourId: '',
+        workType: '',
+        quantity: 1,
+        customWage: ''
     });
 
     // Check for month boundary and reset order IDs
@@ -90,21 +108,19 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
         }
     };
 
-    // Generate Order ID when modal opens
-    const generateOrderId = async () => {
+    // Preview Order ID when modal opens (does not increment - just for display)
+    const previewOrderId = async () => {
         try {
             const response = await ordersAPI.getNextId();
             setFormData(prev => ({ ...prev, orderId: response.nextId }));
         } catch {
-            // Fallback to timestamp-based ID
-            const timestamp = Date.now().toString().slice(-6);
-            setFormData(prev => ({ ...prev, orderId: `ORD${timestamp}` }));
+            setFormData(prev => ({ ...prev, orderId: 'Auto' }));
         }
     };
 
     const handleOpenCreateModal = () => {
         setFormError('');
-        generateOrderId();
+        previewOrderId();
         setShowCreateModal(true);
     };
 
@@ -118,11 +134,14 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
             noOfSets: 1,
             shirtAmount: 500,
             pantAmount: 400,
+            advanceAmount: 0,
             paymentMethod: 'Cash',
             shirt: { length: '', shoulder: '', sleeve: '', chest: '', collar: '', waist: '' },
             pant: { length: '', waist: '', hip: '', thigh: '', knee: '', bottom: '' }
         });
         setFormError('');
+        setCustomerSuggestions([]);
+        setShowSuggestions(false);
     };
 
     const handleInputChange = (e) => {
@@ -151,15 +170,17 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
         setFormError('');
         setIsSubmitting(true);
 
-        // Validation
-        if (!formData.orderId || !formData.name || !formData.phone) {
-            setFormError('Order ID, Name, and Phone are required');
+        // Validation - orderId is auto-generated on backend, not required from frontend
+        if (!formData.name || !formData.phone) {
+            setFormError('Name and Phone are required');
             setIsSubmitting(false);
             return;
         }
 
         try {
-            await ordersAPI.create(formData);
+            // Don't send orderId - backend generates it atomically
+            const { orderId: _orderId, ...orderDataWithoutId } = formData;
+            await ordersAPI.create(orderDataWithoutId);
             handleCloseCreateModal();
             if (refreshOrders) refreshOrders();
             setToast({ show: true, message: 'Order Created', type: 'success' });
@@ -176,6 +197,61 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
         const shirt = parseFloat(formData.shirtAmount) || 0;
         const pant = parseFloat(formData.pantAmount) || 0;
         return (shirt + pant) * sets;
+    };
+
+    const calculateRemainingAmount = () => {
+        const total = calculateTotal();
+        const advance = parseFloat(formData.advanceAmount) || 0;
+        return Math.max(0, total - advance);
+    };
+
+    // Search for previous customers by name
+    const searchCustomers = async (searchName) => {
+        if (!searchName || searchName.length < 2) {
+            setCustomerSuggestions([]);
+            setShowSuggestions(false);
+            return;
+        }
+
+        try {
+            setSearchingCustomers(true);
+            const suggestions = await ordersAPI.searchCustomers(searchName);
+            setCustomerSuggestions(suggestions);
+            setShowSuggestions(suggestions.length > 0);
+        } catch (error) {
+            console.error('Error searching customers:', error);
+            setCustomerSuggestions([]);
+            setShowSuggestions(false);
+        } finally {
+            setSearchingCustomers(false);
+        }
+    };
+
+    // Handle customer name change with debounced search
+    const handleNameChange = (e) => {
+        const { value } = e.target;
+        setFormData(prev => ({ ...prev, name: value }));
+        
+        // Debounce the search
+        clearTimeout(window.customerSearchTimeout);
+        window.customerSearchTimeout = setTimeout(() => {
+            searchCustomers(value);
+        }, 300);
+    };
+
+    // Select a previous customer
+    const selectCustomer = (customer) => {
+        setFormData(prev => ({
+            ...prev,
+            name: customer.name,
+            phone: customer.phone || '',
+            email: customer.email || '',
+            shirt: customer.shirt || prev.shirt,
+            pant: customer.pant || prev.pant
+            // Note: Amount fields are NOT auto-filled
+        }));
+        setShowSuggestions(false);
+        setCustomerSuggestions([]);
     };
 
     // Filter only civil orders (orders without companyId)
@@ -283,6 +359,83 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
         setSelectedDate('');
         setTimePeriod('all');
         setDateFilteredOrders(null);
+    };
+
+    // Load labour list for assignment
+    const loadLabourList = async () => {
+        try {
+            setLoadingLabour(true);
+            const labours = await labourAPI.getAll();
+            setLabourList(labours || []);
+        } catch (error) {
+            console.error('Error loading labour list:', error);
+            setToast({ show: true, message: 'Failed to load labour list', type: 'error' });
+        } finally {
+            setLoadingLabour(false);
+        }
+    };
+
+    // Fetch already assigned work types for an order
+    const fetchAssignedWorkTypes = async (orderId) => {
+        try {
+            const assignments = await workAssignmentsAPI.getByOrder(orderId);
+            const workTypes = assignments.map(a => a.workType);
+            setAvailableWorkTypes(['Pant', 'Shirt', 'Ironing', 'Embroidery'].filter(wt => !workTypes.includes(wt)));
+        } catch (error) {
+            console.error('Error fetching assigned work types:', error);
+            setAvailableWorkTypes(['Pant', 'Shirt', 'Ironing', 'Embroidery']);
+        }
+    };
+
+    // Open assignment modal
+    const handleOpenAssignModal = async (order) => {
+        setSelectedOrder(order);
+        setAssignmentData({ labourId: '', workType: '', quantity: 1, customWage: '' });
+        await fetchAssignedWorkTypes(order.orderId || order._id);
+        await loadLabourList();
+        setShowAssignModal(true);
+    };
+
+    // Close assignment modal
+    const handleCloseAssignModal = () => {
+        setShowAssignModal(false);
+        setSelectedOrder(null);
+        setAssignmentData({ labourId: '', workType: '', quantity: 1, customWage: '' });
+    };
+
+    // Submit work assignment
+    const handleSubmitAssignment = async (e) => {
+        e.preventDefault();
+        
+        if (!assignmentData.labourId || !assignmentData.workType || !assignmentData.quantity) {
+            setToast({ show: true, message: 'Please fill all required fields', type: 'error' });
+            return;
+        }
+
+        try {
+            setIsSubmitting(true);
+            const selectedLabour = labourList.find(l => l._id === assignmentData.labourId);
+            
+            await workAssignmentsAPI.create({
+                labourId: assignmentData.labourId,
+                orderId: selectedOrder.orderId || selectedOrder._id,
+                workType: assignmentData.workType,
+                quantity: parseInt(assignmentData.quantity),
+                customWage: assignmentData.customWage ? parseFloat(assignmentData.customWage) : null,
+                orderCustomerName: selectedOrder.name,
+                orderDate: selectedOrder.date
+            });
+
+            setToast({ show: true, message: `Work assigned to ${selectedLabour?.name}`, type: 'success' });
+            handleCloseAssignModal();
+            
+            // Refresh the assignment data for this order
+            await fetchAssignedWorkTypes(selectedOrder.orderId || selectedOrder._id);
+        } catch (error) {
+            setToast({ show: true, message: error.message || 'Failed to assign work', type: 'error' });
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -512,12 +665,28 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                                             <td>{order.noOfSets || 1}</td>
                                             <td>{order.date}</td>
                                             <td>
-                                                <button 
-                                                    className="btn btn-sm btn-secondary"
-                                                    onClick={() => viewMeasurements(order)}
-                                                >
-                                                    <Eye size={14} /> View
-                                                </button>
+                                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                    <button 
+                                                        className="btn btn-sm btn-secondary"
+                                                        onClick={() => viewMeasurements(order)}
+                                                    >
+                                                        <Eye size={14} /> View
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-sm"
+                                                        style={{
+                                                            backgroundColor: availableWorkTypes.length === 0 ? '#10b981' : '#3b82f6',
+                                                            color: 'white',
+                                                            border: 'none',
+                                                            cursor: availableWorkTypes.length === 0 ? 'not-allowed' : 'pointer',
+                                                            opacity: availableWorkTypes.length === 0 ? 0.7 : 1
+                                                        }}
+                                                        onClick={() => handleOpenAssignModal(order)}
+                                                        disabled={availableWorkTypes.length === 0}
+                                                    >
+                                                        {availableWorkTypes.length === 0 ? '✓ Assigned' : 'Assign'}
+                                                    </button>
+                                                </div>
                                             </td>
                                             <td>
                                                 <span className={`badge ${
@@ -724,28 +893,99 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                                     </h4>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
                                         <div className="form-group">
-                                            <label className="form-label">Order ID *</label>
-                                            <input
-                                                type="text"
-                                                name="orderId"
-                                                value={formData.orderId}
-                                                onChange={handleInputChange}
-                                                className="form-input"
-                                                placeholder="ORD001"
-                                                required
-                                            />
+                                            <label className="form-label">Order ID</label>
+                                            <div
+                                                style={{
+                                                    padding: '0.75rem 1rem',
+                                                    backgroundColor: '#f1f5f9',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid #e2e8f0',
+                                                    color: '#1e3a8a',
+                                                    fontWeight: '600',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between'
+                                                }}
+                                            >
+                                                <span>{formData.orderId || 'Auto'}</span>
+                                            </div>
                                         </div>
-                                        <div className="form-group">
+                                        <div className="form-group" style={{ position: 'relative' }}>
                                             <label className="form-label">Customer Name *</label>
                                             <input
                                                 type="text"
                                                 name="name"
                                                 value={formData.name}
-                                                onChange={handleInputChange}
+                                                onChange={handleNameChange}
+                                                onFocus={() => formData.name.length >= 2 && customerSuggestions.length > 0 && setShowSuggestions(true)}
+                                                onBlur={() => setTimeout(() => setShowSuggestions(false), 300)}
                                                 className="form-input"
                                                 placeholder="Enter customer name"
+                                                autoComplete="off"
                                                 required
                                             />
+                                            {searchingCustomers && (
+                                                <div style={{ 
+                                                    position: 'absolute', 
+                                                    right: '10px', 
+                                                    top: '38px',
+                                                    fontSize: '0.75rem',
+                                                    color: '#64748b'
+                                                }}>
+                                                    Searching...
+                                                </div>
+                                            )}
+                                            {showSuggestions && customerSuggestions.length > 0 && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '100%',
+                                                    left: 0,
+                                                    right: 0,
+                                                    backgroundColor: 'white',
+                                                    border: '1px solid #e2e8f0',
+                                                    borderRadius: '8px',
+                                                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                                    zIndex: 100,
+                                                    maxHeight: '200px',
+                                                    overflow: 'auto'
+                                                }}>
+                                                    <div style={{ 
+                                                        padding: '0.5rem 0.75rem', 
+                                                        fontSize: '0.75rem', 
+                                                        color: '#64748b',
+                                                        borderBottom: '1px solid #e2e8f0',
+                                                        backgroundColor: '#f8fafc'
+                                                    }}>
+                                                        Previous Customers
+                                                    </div>
+                                                    {customerSuggestions.map((customer, index) => (
+                                                        <div
+                                                            key={index}
+                                                            onMouseDown={(e) => {
+                                                                e.preventDefault();
+                                                                selectCustomer(customer);
+                                                            }}
+                                                            style={{
+                                                                padding: '0.75rem',
+                                                                cursor: 'pointer',
+                                                                borderBottom: index < customerSuggestions.length - 1 ? '1px solid #f1f5f9' : 'none',
+                                                                transition: 'background-color 0.2s',
+                                                                backgroundColor: 'white'
+                                                            }}
+                                                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#eff6ff'}
+                                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'white'}
+                                                        >
+                                                            <div style={{ fontWeight: '600', color: '#1e3a8a', pointerEvents: 'none' }}>{customer.name}</div>
+                                                            <div style={{ fontSize: '0.75rem', color: '#64748b', pointerEvents: 'none' }}>
+                                                                {customer.phone} {customer.email && `• ${customer.email}`}
+                                                            </div>
+                                                            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px', pointerEvents: 'none' }}>
+                                                                Last order: {customer.lastOrderDate}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="form-group">
                                             <label className="form-label">Phone Number *</label>
@@ -883,7 +1123,43 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                                         </div>
                                     </div>
                                     
-                                    {/* Total Amount Display */}
+                                    {/* Advance Payment Section */}
+                                    <div style={{ 
+                                        marginTop: '1rem', 
+                                        padding: '1rem', 
+                                        backgroundColor: '#fef9c3', 
+                                        borderRadius: '8px',
+                                        border: '1px solid #fde047'
+                                    }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'center' }}>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label" style={{ color: '#854d0e', fontWeight: '600' }}>
+                                                    Advance Amount (₹)
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    name="advanceAmount"
+                                                    value={formData.advanceAmount}
+                                                    onChange={handleInputChange}
+                                                    className="form-input"
+                                                    min="0"
+                                                    max={calculateTotal()}
+                                                    placeholder="0"
+                                                    style={{ backgroundColor: 'white' }}
+                                                />
+                                            </div>
+                                            <div style={{ textAlign: 'right' }}>
+                                                <div style={{ fontSize: '0.75rem', color: '#854d0e', marginBottom: '0.25rem' }}>
+                                                    Total Amount: ₹{calculateTotal().toLocaleString()}
+                                                </div>
+                                                <div style={{ fontSize: '0.75rem', color: '#854d0e', marginBottom: '0.25rem' }}>
+                                                    Advance Paid: ₹{(parseFloat(formData.advanceAmount) || 0).toLocaleString()}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Total & Remaining Amount Display */}
                                     <div style={{ 
                                         marginTop: '1rem', 
                                         padding: '1rem', 
@@ -893,10 +1169,30 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                                         justifyContent: 'space-between',
                                         alignItems: 'center'
                                     }}>
-                                        <span style={{ fontWeight: '600', color: '#1e3a8a' }}>Total Amount:</span>
-                                        <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#1e3a8a' }}>
-                                            ₹{calculateTotal().toLocaleString()}
-                                        </span>
+                                        <div>
+                                            <span style={{ fontWeight: '600', color: '#1e3a8a' }}>Total Amount:</span>
+                                            <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#1e3a8a', marginLeft: '0.5rem' }}>
+                                                ₹{calculateTotal().toLocaleString()}
+                                            </span>
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <span style={{ fontWeight: '600', color: parseFloat(formData.advanceAmount) > 0 ? '#dc2626' : '#1e3a8a' }}>
+                                                Remaining to Pay:
+                                            </span>
+                                            <span style={{ 
+                                                fontSize: '1.5rem', 
+                                                fontWeight: 'bold', 
+                                                color: parseFloat(formData.advanceAmount) > 0 ? '#dc2626' : '#1e3a8a',
+                                                marginLeft: '0.5rem'
+                                            }}>
+                                                ₹{calculateRemainingAmount().toLocaleString()}
+                                            </span>
+                                            {parseFloat(formData.advanceAmount) > 0 && (
+                                                <div style={{ fontSize: '0.75rem', color: '#16a34a', marginTop: '0.25rem' }}>
+                                                    ✓ Advance of ₹{parseFloat(formData.advanceAmount).toLocaleString()} received
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -925,6 +1221,135 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                                 >
                                     <Save size={18} />
                                     {isSubmitting ? 'Creating...' : 'Create Order'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Work Assignment Modal */}
+            {showAssignModal && selectedOrder && (
+                <div className="modal-overlay" onClick={handleCloseAssignModal}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                        <div className="modal-header">
+                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Zap size={20} />
+                                Assign Work - {selectedOrder.name}
+                            </h3>
+                            <button className="btn btn-sm btn-secondary" onClick={handleCloseAssignModal}>
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleSubmitAssignment}>
+                            <div className="modal-body">
+                                {/* Labour Selection */}
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="form-label">Select Labour *</label>
+                                    <select
+                                        value={assignmentData.labourId}
+                                        onChange={(e) => setAssignmentData({ ...assignmentData, labourId: e.target.value })}
+                                        className="form-input"
+                                        disabled={loadingLabour || isSubmitting}
+                                    >
+                                        <option value="">Choose a labour</option>
+                                        {labourList.map(labour => (
+                                            <option key={labour._id} value={labour._id}>
+                                                {labour.name} ({labour.category})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Work Type Selection */}
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="form-label">Work Type *</label>
+                                    {availableWorkTypes.length === 0 ? (
+                                        <div style={{
+                                            padding: '1rem',
+                                            backgroundColor: '#dcfce7',
+                                            borderRadius: '6px',
+                                            color: '#15803d',
+                                            fontSize: '0.9rem',
+                                            textAlign: 'center'
+                                        }}>
+                                            ✓ All work types have been assigned
+                                        </div>
+                                    ) : (
+                                        <select
+                                            value={assignmentData.workType}
+                                            onChange={(e) => setAssignmentData({ ...assignmentData, workType: e.target.value })}
+                                            className="form-input"
+                                            disabled={isSubmitting}
+                                        >
+                                            <option value="">
+                                                Select work type ({availableWorkTypes.length} available)
+                                            </option>
+                                            {availableWorkTypes.map(workType => (
+                                                <option key={workType} value={workType}>
+                                                    {workType}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    )}
+                                </div>
+
+                                {/* Quantity */}
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="form-label">Quantity *</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={assignmentData.quantity}
+                                        onChange={(e) => setAssignmentData({ ...assignmentData, quantity: parseInt(e.target.value) })}
+                                        className="form-input"
+                                        disabled={isSubmitting}
+                                    />
+                                </div>
+
+                                {/* Custom Wage Override */}
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <label className="form-label">Custom Wage (Optional)</label>
+                                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>
+                                        Leave empty to use standard rates
+                                    </div>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.5"
+                                        placeholder="Enter custom wage per unit"
+                                        value={assignmentData.customWage}
+                                        onChange={(e) => setAssignmentData({ ...assignmentData, customWage: e.target.value })}
+                                        className="form-input"
+                                        disabled={isSubmitting}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div style={{ 
+                                padding: '1rem 1.5rem', 
+                                borderTop: '1px solid #e2e8f0',
+                                display: 'flex',
+                                justifyContent: 'flex-end',
+                                gap: '1rem'
+                            }}>
+                                <button 
+                                    type="button" 
+                                    className="btn btn-secondary" 
+                                    onClick={handleCloseAssignModal}
+                                    disabled={isSubmitting}
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    className="btn btn-primary"
+                                    disabled={isSubmitting || availableWorkTypes.length === 0 || !assignmentData.labourId || !assignmentData.workType || !assignmentData.quantity}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                                >
+                                    <Zap size={18} />
+                                    {isSubmitting ? 'Assigning...' : 'Assign Work'}
                                 </button>
                             </div>
                         </form>
