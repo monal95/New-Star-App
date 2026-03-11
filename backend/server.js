@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 const { connectDB } = require('./config/db');
+const { initializeAdmin } = require('./utils/initializeAdmin');
 
 const app = express();
 
@@ -17,6 +18,7 @@ const companyEmployeesRoutes = require('./routes/companyEmployees');
 const labourRoutes = require('./routes/labour');
 const wagesRoutes = require('./routes/wages');
 const workAssignmentsRoutes = require('./routes/workAssignments');
+const authRoutes = require('./routes/auth');
 
 // Routes
 app.get('/api/health', (req, res) => {
@@ -24,6 +26,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // API Routes
+app.use('/api/auth', authRoutes);
 app.use('/api/orders', ordersRoutes);
 app.use('/api/companies', companiesRoutes);
 app.use('/api/employees', companyEmployeesRoutes);
@@ -36,9 +39,15 @@ const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
   try {
-    await connectDB();
+    const db = await connectDB();
+    
+    // Initialize admin user if it doesn't exist
+    await initializeAdmin(db);
+    
     app.listen(PORT, () => {
+      console.log(`\n========================================`);
       console.log(`Server running on port ${PORT}`);
+      console.log(`========================================\n`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

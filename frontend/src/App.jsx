@@ -4,14 +4,51 @@ import CivilForm from './components/CivilForm';
 import CivilDashboard from './components/CivilDashboard';
 import CompanyDashboard from './components/CompanyDashboard';
 import LabourDashboard from './components/LabourDashboard';
+import LandingPage from './components/LandingPage';
+import AdminLogin from './components/AdminLogin';
 import { ordersAPI } from './services/api';
 import { Search, Filter } from 'lucide-react';
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentPage, setCurrentPage] = useState('landing'); // 'landing', 'login', or 'app'
   const [activeView, setActiveView] = useState('civil-dashboard');
   const [orders, setOrders] = useState([]);
   const [labourSearchTerm, setLabourSearchTerm] = useState('');
   const [labourFilterCategory, setLabourFilterCategory] = useState('all');
+
+  // Persist current page to localStorage
+  useEffect(() => {
+    if (currentPage === 'app') {
+      localStorage.setItem('currentPage', currentPage);
+    } else if (currentPage === 'landing') {
+      localStorage.removeItem('currentPage');
+    }
+  }, [currentPage]);
+
+  // Persist active view to localStorage
+  useEffect(() => {
+    if (isAuthenticated) {
+      localStorage.setItem('activeView', activeView);
+    }
+  }, [activeView, isAuthenticated]);
+
+  // Check if user is already logged in on mount
+  useEffect(() => {
+    const adminAuth = localStorage.getItem('adminAuth');
+    if (adminAuth) {
+      setIsAuthenticated(true);
+      setCurrentPage('app');
+      
+      // Restore the last viewed page if it exists
+      const savedPage = localStorage.getItem('currentPage');
+      const savedView = localStorage.getItem('activeView');
+      
+      if (savedView) {
+        setActiveView(savedView);
+      }
+    }
+  }, []);
 
   // Fetch civil orders from API (current month only)
   const fetchOrders = useCallback(async () => {
@@ -89,9 +126,38 @@ function App() {
 
   const { title, subtitle } = getPageTitle();
 
+  // Handle landing page
+  if (currentPage === 'landing') {
+    return (
+      <LandingPage
+        onStartTailoring={() => setCurrentPage('login')}
+      />
+    );
+  }
+
+  // Handle login page
+  if (currentPage === 'login') {
+    return (
+      <AdminLogin
+        onLoginSuccess={() => {
+          setIsAuthenticated(true);
+          setCurrentPage('app');
+        }}
+        onBack={() => setCurrentPage('landing')}
+      />
+    );
+  }
+
+  // Render main app
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setCurrentPage('landing');
+    setActiveView('civil-dashboard');
+  };
+
   return (
     <div className="app-container">
-      <Sidebar activeView={activeView} setActiveView={setActiveView} />
+      <Sidebar activeView={activeView} setActiveView={setActiveView} onLogout={handleLogout} />
       <main className="main-content">
         <header className="page-header">
           <div>

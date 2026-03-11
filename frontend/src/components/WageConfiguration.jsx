@@ -62,7 +62,7 @@ const WageConfiguration = () => {
                 return;
             }
 
-            const result = await wagesAPI.update(editingWages);
+            await wagesAPI.update(editingWages);
             setWages(editingWages);
             setIsDirty(false);
             setToast({ show: true, message: 'Wage configuration updated successfully', type: 'success' });
