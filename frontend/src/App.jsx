@@ -4,6 +4,7 @@ import CivilForm from "./components/CivilForm";
 import CivilDashboard from "./components/CivilDashboard";
 import CompanyDashboard from "./components/CompanyDashboard";
 import LabourDashboard from "./components/LabourDashboard";
+import AnalyticsDashboard from "./pages/AnalyticsDashboard";
 import LandingPage from "./components/LandingPage";
 import AdminLogin from "./components/AdminLogin";
 import { ordersAPI } from "./services/api";
@@ -118,6 +119,11 @@ function App() {
           title: "Labour Dashboard",
           subtitle: "Manage tailor workforce and labour",
         };
+      case "analytics-dashboard":
+        return {
+          title: "Analytics Dashboard",
+          subtitle: "Track your tailoring business performance",
+        };
       case "civil":
         return {
           title: "Customer Orders",
@@ -156,7 +162,14 @@ function App() {
           />
         );
       case "labour-dashboard":
-        return <LabourDashboard />;
+        return (
+          <LabourDashboard
+            searchTerm={labourSearchTerm}
+            filterCategory={labourFilterCategory}
+          />
+        );
+      case "analytics-dashboard":
+        return <AnalyticsDashboard />;
       case "civil":
         return (
           <CivilForm
@@ -220,32 +233,142 @@ function App() {
               <div
                 style={{ display: "flex", gap: "1rem", alignItems: "center" }}
               >
-                {/* Category Filter */}
+                {/* Category Filter Buttons */}
                 <div
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: "0.5rem",
+                    flexWrap: "wrap",
                   }}
                 >
                   <Filter size={18} style={{ color: "#cbd5e1" }} />
-                  <select
-                    value={labourFilterCategory}
-                    onChange={(e) => setLabourFilterCategory(e.target.value)}
-                    className="form-input"
+                  <button
+                    onClick={() => setLabourFilterCategory("all")}
                     style={{
-                      padding: "0.5rem 0.75rem",
-                      minWidth: "150px",
-                      backgroundColor: "#1e293b",
-                      color: "#f1f5f9",
-                      border: "1px solid #475569",
+                      padding: "0.5rem 1rem",
+                      backgroundColor:
+                        labourFilterCategory === "all" ? "#1e40af" : "#e2e8f0",
+                      color:
+                        labourFilterCategory === "all" ? "#fff" : "#475569",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontWeight:
+                        labourFilterCategory === "all" ? "600" : "500",
+                      transition: "all 0.2s ease",
+                      fontSize: "0.875rem",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (labourFilterCategory !== "all") {
+                        e.currentTarget.style.backgroundColor = "#cbd5e1";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (labourFilterCategory !== "all") {
+                        e.currentTarget.style.backgroundColor = "#e2e8f0";
+                      }
                     }}
                   >
-                    <option value="all">All Categories</option>
-                    <option value="Tailor">Tailor</option>
-                    <option value="Iron Master">Iron Master</option>
-                    <option value="Embroider">Embroider</option>
-                  </select>
+                    All Categories
+                  </button>
+                  <button
+                    onClick={() => setLabourFilterCategory("Tailor")}
+                    style={{
+                      padding: "0.5rem 1rem",
+                      backgroundColor:
+                        labourFilterCategory === "Tailor"
+                          ? "#1e40af"
+                          : "#e2e8f0",
+                      color:
+                        labourFilterCategory === "Tailor" ? "#fff" : "#475569",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontWeight:
+                        labourFilterCategory === "Tailor" ? "600" : "500",
+                      transition: "all 0.2s ease",
+                      fontSize: "0.875rem",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (labourFilterCategory !== "Tailor") {
+                        e.currentTarget.style.backgroundColor = "#cbd5e1";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (labourFilterCategory !== "Tailor") {
+                        e.currentTarget.style.backgroundColor = "#e2e8f0";
+                      }
+                    }}
+                  >
+                    Tailor
+                  </button>
+                  <button
+                    onClick={() => setLabourFilterCategory("Iron Master")}
+                    style={{
+                      padding: "0.5rem 1rem",
+                      backgroundColor:
+                        labourFilterCategory === "Iron Master"
+                          ? "#1e40af"
+                          : "#e2e8f0",
+                      color:
+                        labourFilterCategory === "Iron Master"
+                          ? "#fff"
+                          : "#475569",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontWeight:
+                        labourFilterCategory === "Iron Master" ? "600" : "500",
+                      transition: "all 0.2s ease",
+                      fontSize: "0.875rem",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (labourFilterCategory !== "Iron Master") {
+                        e.currentTarget.style.backgroundColor = "#cbd5e1";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (labourFilterCategory !== "Iron Master") {
+                        e.currentTarget.style.backgroundColor = "#e2e8f0";
+                      }
+                    }}
+                  >
+                    Iron Master
+                  </button>
+                  <button
+                    onClick={() => setLabourFilterCategory("Embroider")}
+                    style={{
+                      padding: "0.5rem 1rem",
+                      backgroundColor:
+                        labourFilterCategory === "Embroider"
+                          ? "#1e40af"
+                          : "#e2e8f0",
+                      color:
+                        labourFilterCategory === "Embroider"
+                          ? "#fff"
+                          : "#475569",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontWeight:
+                        labourFilterCategory === "Embroider" ? "600" : "500",
+                      transition: "all 0.2s ease",
+                      fontSize: "0.875rem",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (labourFilterCategory !== "Embroider") {
+                        e.currentTarget.style.backgroundColor = "#cbd5e1";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (labourFilterCategory !== "Embroider") {
+                        e.currentTarget.style.backgroundColor = "#e2e8f0";
+                      }
+                    }}
+                  >
+                    Embroider
+                  </button>
                 </div>
 
                 {/* Search Bar - Compact */}
@@ -257,19 +380,21 @@ function App() {
                     width: "250px",
                   }}
                 >
-                  <Search size={18} style={{ color: "#cbd5e1" }} />
+                  <Search size={18} style={{ color: "#1e40af" }} />
                   <input
                     type="text"
-                    placeholder="Search..."
+                    placeholder="Search labour..."
                     value={labourSearchTerm}
                     onChange={(e) => setLabourSearchTerm(e.target.value)}
                     className="form-input"
                     style={{
                       width: "100%",
                       padding: "0.5rem 0.75rem",
-                      backgroundColor: "#1e293b",
-                      color: "#f1f5f9",
-                      border: "1px solid #475569",
+                      backgroundColor: "#f1f5f9",
+                      color: "#1e293b",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "6px",
+                      fontSize: "0.875rem",
                     }}
                   />
                 </div>

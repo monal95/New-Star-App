@@ -5,6 +5,7 @@ import {
   Building,
   Briefcase,
   LogOut,
+  BarChart3,
 } from "lucide-react";
 
 const Sidebar = ({ activeView, setActiveView, onLogout }) => {
@@ -12,6 +13,11 @@ const Sidebar = ({ activeView, setActiveView, onLogout }) => {
     { id: "civil-dashboard", label: "Civil Dashboard", icon: UserCircle },
     { id: "company-dashboard", label: "Company Dashboard", icon: Building },
     { id: "labour-dashboard", label: "Labour Dashboard", icon: Briefcase },
+    {
+      id: "analytics-dashboard",
+      label: "Analytics Dashboard",
+      icon: BarChart3,
+    },
     { id: "civil", label: "Customer Orders", icon: UserCircle },
   ];
 
