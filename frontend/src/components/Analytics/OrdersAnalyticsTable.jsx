@@ -1,6 +1,68 @@
 import React, { useState, useMemo } from "react";
 import { ChevronUp, ChevronDown, Search } from "lucide-react";
 
+const SortIcon = ({ sortConfig, column }) => {
+  if (sortConfig.key !== column) return <div className="w-4 h-4" />;
+  return sortConfig.direction === "asc" ? (
+    <ChevronUp size={16} />
+  ) : (
+    <ChevronDown size={16} />
+  );
+};
+
+const defaultTableData = [
+  {
+    id: 1,
+    orderId: "ORD-001",
+    customerName: "Raj Kumar",
+    dressType: "Shirt",
+    tailor: "Sanjay",
+    price: 500,
+    status: "Completed",
+    deliveryDate: "2024-03-20",
+  },
+  {
+    id: 2,
+    orderId: "ORD-002",
+    customerName: "Priya Singh",
+    dressType: "Pants",
+    tailor: "Anwar",
+    price: 600,
+    status: "In Progress",
+    deliveryDate: "2024-03-25",
+  },
+  {
+    id: 3,
+    orderId: "ORD-003",
+    customerName: "Ankit Patel",
+    dressType: "Blazer",
+    tailor: "Dhana",
+    price: 1200,
+    status: "Pending",
+    deliveryDate: "2024-03-28",
+  },
+  {
+    id: 4,
+    orderId: "ORD-004",
+    customerName: "Neha Verma",
+    dressType: "Saree Blouse",
+    tailor: "Ramesh",
+    price: 400,
+    status: "Completed",
+    deliveryDate: "2024-03-19",
+  },
+  {
+    id: 5,
+    orderId: "ORD-005",
+    customerName: "Vikram Desai",
+    dressType: "Uniform",
+    tailor: "Vikram",
+    price: 800,
+    status: "In Progress",
+    deliveryDate: "2024-03-26",
+  },
+];
+
 const OrdersAnalyticsTable = ({ data = [], isLoading = false }) => {
   const [sortConfig, setSortConfig] = useState({
     key: "orderDate",
@@ -10,61 +72,10 @@ const OrdersAnalyticsTable = ({ data = [], isLoading = false }) => {
   const [currentPage, setCurrentPage] = useState(0);
   const itemsPerPage = 10;
 
-  const tableData =
-    data.length > 0
-      ? data
-      : [
-          {
-            id: 1,
-            orderId: "ORD-001",
-            customerName: "Raj Kumar",
-            dressType: "Shirt",
-            tailor: "Sanjay",
-            price: 500,
-            status: "Completed",
-            deliveryDate: "2024-03-20",
-          },
-          {
-            id: 2,
-            orderId: "ORD-002",
-            customerName: "Priya Singh",
-            dressType: "Pants",
-            tailor: "Anwar",
-            price: 600,
-            status: "In Progress",
-            deliveryDate: "2024-03-25",
-          },
-          {
-            id: 3,
-            orderId: "ORD-003",
-            customerName: "Ankit Patel",
-            dressType: "Blazer",
-            tailor: "Dhana",
-            price: 1200,
-            status: "Pending",
-            deliveryDate: "2024-03-28",
-          },
-          {
-            id: 4,
-            orderId: "ORD-004",
-            customerName: "Neha Verma",
-            dressType: "Saree Blouse",
-            tailor: "Ramesh",
-            price: 400,
-            status: "Completed",
-            deliveryDate: "2024-03-19",
-          },
-          {
-            id: 5,
-            orderId: "ORD-005",
-            customerName: "Vikram Desai",
-            dressType: "Uniform",
-            tailor: "Vikram",
-            price: 800,
-            status: "In Progress",
-            deliveryDate: "2024-03-26",
-          },
-        ];
+  const tableData = useMemo(
+    () => (data.length > 0 ? data : defaultTableData),
+    [data],
+  );
 
   // Filter data
   const filteredData = useMemo(() => {
@@ -112,15 +123,6 @@ const OrdersAnalyticsTable = ({ data = [], isLoading = false }) => {
     return statusStyles[status] || "bg-slate-100 text-slate-800";
   };
 
-  const SortIcon = ({ column }) => {
-    if (sortConfig.key !== column) return <div className="w-4 h-4" />;
-    return sortConfig.direction === "asc" ? (
-      <ChevronUp size={16} />
-    ) : (
-      <ChevronDown size={16} />
-    );
-  };
-
   if (isLoading) {
     return (
       <div className="bg-white rounded-xl shadow-md p-6 border border-slate-200">
@@ -162,7 +164,7 @@ const OrdersAnalyticsTable = ({ data = [], isLoading = false }) => {
                   className="flex items-center gap-2 hover:text-slate-900"
                 >
                   Order ID
-                  <SortIcon column="orderId" />
+                  <SortIcon sortConfig={sortConfig} column="orderId" />
                 </button>
               </th>
               <th className="px-6 py-3 text-left text-slate-600 font-semibold">
@@ -171,7 +173,7 @@ const OrdersAnalyticsTable = ({ data = [], isLoading = false }) => {
                   className="flex items-center gap-2 hover:text-slate-900"
                 >
                   Customer
-                  <SortIcon column="customerName" />
+                  <SortIcon sortConfig={sortConfig} column="customerName" />
                 </button>
               </th>
               <th className="px-6 py-3 text-left text-slate-600 font-semibold">
@@ -180,7 +182,7 @@ const OrdersAnalyticsTable = ({ data = [], isLoading = false }) => {
                   className="flex items-center gap-2 hover:text-slate-900"
                 >
                   Dress Type
-                  <SortIcon column="dressType" />
+                  <SortIcon sortConfig={sortConfig} column="dressType" />
                 </button>
               </th>
               <th className="px-6 py-3 text-left text-slate-600 font-semibold">
@@ -192,7 +194,7 @@ const OrdersAnalyticsTable = ({ data = [], isLoading = false }) => {
                   className="flex items-center gap-2 hover:text-slate-900"
                 >
                   Price
-                  <SortIcon column="price" />
+                  <SortIcon sortConfig={sortConfig} column="price" />
                 </button>
               </th>
               <th className="px-6 py-3 text-left text-slate-600 font-semibold">
