@@ -9,8 +9,7 @@ console.log(
 );
 console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
 console.log("============================\n");
-const { connectDB } = require("./config/db");
-const { initializeAdmin } = require("./utils/initializeAdmin");
+const { connectDB, initializeTables } = require("./config/db");
 
 const app = express();
 
@@ -49,10 +48,8 @@ const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
   try {
-    const db = await connectDB();
-
-    // Initialize admin user if it doesn't exist
-    await initializeAdmin(db);
+    await connectDB();
+    await initializeTables();
 
     app.listen(PORT, () => {
       console.log(`\n========================================`);

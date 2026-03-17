@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcrypt");
-const { getDB } = require("../config/db");
+const { runQuery, getRow, run } = require("../config/db");
 const { sendOTPEmail } = require("../services/emailService");
 
 // Function to generate a 6-digit OTP
@@ -11,8 +11,70 @@ const generateOTP = () => {
 
 // Function to generate OTP expiration time (10 minutes from now)
 const getOTPExpiration = () => {
-  return new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+  return new Date(Date.now() + 10 * 60 * 1000).toISOString();
 };
+
+// Register endpoint (only for creating first admin)
+router.post("/register", async (req, res) => {
+  try {
+    const { email, username, password } = req.body;
+
+    // Validate input
+    if (!email || !username || !password) {
+      return res
+        .status(400)
+        .json({ error: "Email, username, and password are required" });
+    }
+
+    if (password.length < 6) {
+      return res
+        .status(400)
+        .json({ error: "Password must be at least 6 characters" });
+    }
+
+    // Check if admin already exists
+    const existingAdmin = await getRow("SELECT * FROM admins LIMIT 1", []);
+    if (existingAdmin) {
+      return res
+        .status(403)
+        .json({
+          error: "Admin account already exists. Only one admin is allowed.",
+        });
+    }
+
+    // Check if email already exists
+    const emailExists = await getRow("SELECT * FROM admins WHERE email = ?", [
+      email,
+    ]);
+    if (emailExists) {
+      return res.status(400).json({ error: "Email already registered" });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const now = new Date().toISOString();
+
+    // Create admin
+    const result = await run(
+      "INSERT INTO admins (email, username, password, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)",
+      [email, username, hashedPassword, now, now],
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Admin account created successfully",
+      admin: {
+        id: result.id,
+        email,
+        username,
+        createdAt: now,
+      },
+    });
+  } catch (error) {
+    console.error("Registration error:", error);
+    res.status(500).json({ error: "Failed to create admin account" });
+  }
+});
 
 // Login endpoint
 router.post("/login", async (req, res) => {
@@ -24,10 +86,8 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Email and password are required" });
     }
 
-    const db = getDB();
-
     // Find admin by email
-    const admin = await db.collection("admins").findOne({ email });
+    const admin = await getRow("SELECT * FROM admins WHERE email = ?", [email]);
 
     if (!admin) {
       return res.status(401).json({ error: "Invalid email or password" });
@@ -44,7 +104,7 @@ router.post("/login", async (req, res) => {
     res.json({
       success: true,
       admin: {
-        id: admin._id,
+        id: admin.id,
         email: admin.email,
         username: admin.username,
         createdAt: admin.createdAt,
@@ -59,11 +119,10 @@ router.post("/login", async (req, res) => {
 // Check if admin exists (for frontend verification)
 router.get("/check", async (req, res) => {
   try {
-    const db = getDB();
-    const adminExists = await db.collection("admins").findOne({});
+    const admin = await getRow("SELECT * FROM admins LIMIT 1", []);
 
     res.json({
-      adminExists: !!adminExists,
+      adminExists: !!admin,
     });
   } catch (error) {
     console.error("Check admin error:", error);
@@ -81,10 +140,8 @@ router.post("/forgot-password", async (req, res) => {
       return res.status(400).json({ error: "Email is required" });
     }
 
-    const db = getDB();
-
     // Check if admin exists
-    const admin = await db.collection("admins").findOne({ email });
+    const admin = await getRow("SELECT * FROM admins WHERE email = ?", [email]);
 
     if (!admin) {
       // For security, don't reveal if email exists or not
@@ -96,20 +153,18 @@ router.post("/forgot-password", async (req, res) => {
     // Generate OTP
     const otp = generateOTP();
     const expiresAt = getOTPExpiration();
+    const now = new Date().toISOString();
 
-    // Store OTP in database
-    await db.collection("otpRequests").updateOne(
-      { email },
-      {
-        $set: {
-          email,
-          otp,
-          expiresAt,
-          createdAt: new Date(),
-          verified: false,
-        },
-      },
-      { upsert: true },
+    // Store OTP in database (insert or update)
+    await run(
+      `INSERT INTO otpRequests (email, otp, expiresAt, verified, createdAt, updatedAt)
+       VALUES (?, ?, ?, 0, ?, ?)
+       ON CONFLICT(email) DO UPDATE SET
+       otp = excluded.otp,
+       expiresAt = excluded.expiresAt,
+       verified = 0,
+       updatedAt = excluded.updatedAt`,
+      [email, otp, expiresAt, now, now],
     );
 
     // Send OTP email
@@ -141,22 +196,21 @@ router.post("/verify-otp", async (req, res) => {
       return res.status(400).json({ error: "Email and OTP are required" });
     }
 
-    const db = getDB();
-
     // Find the OTP request
-    const otpRequest = await db.collection("otpRequests").findOne({ email });
+    const otpRequest = await getRow(
+      "SELECT * FROM otpRequests WHERE email = ?",
+      [email],
+    );
 
     if (!otpRequest) {
-      return res
-        .status(400)
-        .json({ error: "No OTP request found for this email" });
+      return res.status(400).json({ error: "OTP not found or expired" });
     }
 
     // Check if OTP has expired
-    if (new Date() > otpRequest.expiresAt) {
-      return res
-        .status(400)
-        .json({ error: "OTP has expired. Please request a new one." });
+    const now = new Date();
+    const expiresAt = new Date(otpRequest.expiresAt);
+    if (now > expiresAt) {
+      return res.status(400).json({ error: "OTP has expired" });
     }
 
     // Check if OTP matches
@@ -165,12 +219,10 @@ router.post("/verify-otp", async (req, res) => {
     }
 
     // Mark OTP as verified
-    await db
-      .collection("otpRequests")
-      .updateOne(
-        { email },
-        { $set: { verified: true, verifiedAt: new Date() } },
-      );
+    await run(
+      "UPDATE otpRequests SET verified = 1, updatedAt = ? WHERE email = ?",
+      [new Date().toISOString(), email],
+    );
 
     res.json({
       success: true,
@@ -185,65 +237,37 @@ router.post("/verify-otp", async (req, res) => {
 // Reset Password
 router.post("/reset-password", async (req, res) => {
   try {
-    const { email, otp, newPassword } = req.body;
+    const { email, password } = req.body;
 
     // Validate input
-    if (!email || !otp || !newPassword) {
-      return res
-        .status(400)
-        .json({ error: "Email, OTP, and new password are required" });
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
     }
 
-    // Validate password strength
-    if (newPassword.length < 6) {
-      return res
-        .status(400)
-        .json({ error: "Password must be at least 6 characters long" });
-    }
-
-    const db = getDB();
-
-    // Find the OTP request
-    const otpRequest = await db
-      .collection("otpRequests")
-      .findOne({ email, verified: true });
-
-    if (!otpRequest) {
-      return res.status(400).json({ error: "OTP verification required first" });
-    }
-
-    // Check if OTP matches
-    if (otpRequest.otp !== otp) {
-      return res.status(400).json({ error: "Invalid OTP" });
-    }
-
-    // Check if OTP has expired
-    if (new Date() > otpRequest.expiresAt) {
-      return res
-        .status(400)
-        .json({ error: "OTP has expired. Please request a new one." });
-    }
-
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    // Update admin password
-    const result = await db.collection("admins").updateOne(
-      { email },
-      {
-        $set: {
-          password: hashedPassword,
-          passwordChangedAt: new Date(),
-        },
-      },
+    // Check if OTP is verified
+    const otpRequest = await getRow(
+      "SELECT * FROM otpRequests WHERE email = ? AND verified = 1",
+      [email],
     );
 
-    if (result.matchedCount === 0) {
-      return res.status(400).json({ error: "Admin not found" });
+    if (!otpRequest) {
+      return res
+        .status(400)
+        .json({ error: "Please verify OTP before resetting password" });
     }
 
-    // Delete the OTP request after successful password reset
-    await db.collection("otpRequests").deleteOne({ email });
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Update admin password
+    await run("UPDATE admins SET password = ?, updatedAt = ? WHERE email = ?", [
+      hashedPassword,
+      new Date().toISOString(),
+      email,
+    ]);
+
+    // Delete OTP request
+    await run("DELETE FROM otpRequests WHERE email = ?", [email]);
 
     res.json({
       success: true,

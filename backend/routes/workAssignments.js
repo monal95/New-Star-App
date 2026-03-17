@@ -1,239 +1,198 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { ObjectId } = require('mongodb');
-const { getDB } = require('../config/db');
+const { runQuery, getRow, run } = require("../config/db");
 
 // Get work assignments for a specific labour
-router.get('/labour/:labourId', async (req, res) => {
-    try {
-        const db = getDB();
-        const { labourId } = req.params;
+router.get("/labour/:labourId", async (req, res) => {
+  try {
+    const { labourId } = req.params;
 
-        const assignments = await db.collection('workAssignments')
-            .find({ labourId: new ObjectId(labourId) })
-            .sort({ assignedDate: -1 })
-            .toArray();
+    const assignments = await runQuery(
+      "SELECT * FROM work_assignments WHERE labour_id = ? ORDER BY assigned_date DESC",
+      [labourId],
+    );
 
-        res.json(assignments);
-    } catch (error) {
-        console.error('Error fetching work assignments:', error);
-        res.status(500).json({ error: 'Failed to fetch work assignments' });
-    }
+    res.json(assignments);
+  } catch (error) {
+    console.error("Error fetching work assignments:", error);
+    res.status(500).json({ error: "Failed to fetch work assignments" });
+  }
 });
 
 // Get work assignments for a specific order
-router.get('/order/:orderId', async (req, res) => {
-    try {
-        const db = getDB();
-        const { orderId } = req.params;
+router.get("/order/:orderId", async (req, res) => {
+  try {
+    const { orderId } = req.params;
 
-        const assignments = await db.collection('workAssignments')
-            .find({ orderId: orderId })
-            .sort({ assignedDate: -1 })
-            .toArray();
+    const assignments = await runQuery(
+      "SELECT * FROM work_assignments WHERE order_id = ? ORDER BY assigned_date DESC",
+      [orderId],
+    );
 
-        res.json(assignments);
-    } catch (error) {
-        console.error('Error fetching work assignments for order:', error);
-        res.status(500).json({ error: 'Failed to fetch work assignments' });
-    }
+    res.json(assignments);
+  } catch (error) {
+    console.error("Error fetching work assignments for order:", error);
+    res.status(500).json({ error: "Failed to fetch work assignments" });
+  }
 });
 
 // Create new work assignment
-router.post('/', async (req, res) => {
-    try {
-        const db = getDB();
-        const { 
-            labourId, 
-            orderId, 
-            workType, 
-            quantity, 
-            customWage,
-            orderCustomerName,
-            orderDate
-        } = req.body;
+router.post("/", async (req, res) => {
+  try {
+    const { labourId, orderId, task_type, quantity } = req.body;
 
-        // Validation
-        if (!labourId || !orderId || !workType || quantity === undefined) {
-            return res.status(400).json({ 
-                error: 'labourId, orderId, workType, and quantity are required' 
-            });
-        }
-
-        // Validate work type
-        const validWorkTypes = ['Pant', 'Shirt', 'Ironing', 'Embroidery'];
-        if (!validWorkTypes.includes(workType)) {
-            return res.status(400).json({ 
-                error: `Invalid work type. Must be one of: ${validWorkTypes.join(', ')}` 
-            });
-        }
-
-        // Get wage configuration to calculate wages
-        const wages = await db.collection('wages').findOne({ _id: 'default' });
-        const wageConfig = wages || {
-            pant: 110,
-            shirt: 100,
-            ironing_pant: 12,
-            ironing_shirt: 10,
-            embroidery: 25
-        };
-
-        // Calculate wages based on work type and quantity
-        // Use custom wage if provided, otherwise use standard rates
-        let wagePerUnit = 0;
-        
-        if (customWage) {
-            // Use custom wage provided by admin
-            wagePerUnit = parseFloat(customWage);
-        } else {
-            // Use standard rates from configuration
-            if (workType === 'Pant') {
-                wagePerUnit = wageConfig.pant;
-            } else if (workType === 'Shirt') {
-                wagePerUnit = wageConfig.shirt;
-            } else if (workType === 'Ironing') {
-                wagePerUnit = wageConfig.ironing_pant; // Default for ironing
-            } else if (workType === 'Embroidery') {
-                wagePerUnit = wageConfig.embroidery;
-            }
-        }
-
-        const totalWages = wagePerUnit * quantity;
-
-        const newAssignment = {
-            labourId: new ObjectId(labourId),
-            orderId: orderId,
-            workType,
-            quantity: parseInt(quantity),
-            wagePerUnit,
-            totalWages,
-            customWage: customWage ? parseFloat(customWage) : null,
-            orderCustomerName: orderCustomerName || '',
-            orderDate: orderDate || new Date().toISOString().split('T')[0],
-            assignedDate: new Date(),
-            status: 'Assigned', // Can be: Assigned, InProgress, Completed
-            completedDate: null,
-            createdAt: new Date(),
-            updatedAt: new Date()
-        };
-
-        const result = await db.collection('workAssignments').insertOne(newAssignment);
-
-        res.status(201).json({
-            message: 'Work assigned successfully',
-            id: result.insertedId,
-            assignment: { ...newAssignment, _id: result.insertedId }
-        });
-    } catch (error) {
-        console.error('Error creating work assignment:', error);
-        res.status(500).json({ error: 'Failed to create work assignment' });
+    // Validation
+    if (!labourId || !orderId || !task_type || quantity === undefined) {
+      return res.status(400).json({
+        error: "labourId, orderId, task_type, and quantity are required",
+      });
     }
+
+    // Validate work type
+    const validWorkTypes = ["Pant", "Shirt", "Ironing", "Embroidery"];
+    if (!validWorkTypes.includes(task_type)) {
+      return res.status(400).json({
+        error: `Invalid task type. Must be one of: ${validWorkTypes.join(", ")}`,
+      });
+    }
+
+    const now = new Date().toISOString();
+    const assignedDate = now.split("T")[0];
+
+    const result = await run(
+      `INSERT INTO work_assignments (labour_id, order_id, task_type, quantity, status, assigned_date, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        labourId,
+        orderId,
+        task_type,
+        parseInt(quantity),
+        "Pending",
+        assignedDate,
+        now,
+        now,
+      ],
+    );
+
+    res.status(201).json({
+      message: "Work assigned successfully",
+      id: result.id,
+      assignment: {
+        id: result.id,
+        labour_id: labourId,
+        order_id: orderId,
+        task_type,
+        quantity: parseInt(quantity),
+        status: "Pending",
+        assigned_date: assignedDate,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating work assignment:", error);
+    res.status(500).json({ error: "Failed to create work assignment" });
+  }
 });
 
 // Update work assignment status
-router.patch('/:id/status', async (req, res) => {
-    try {
-        const db = getDB();
-        const { id } = req.params;
-        const { status } = req.body;
+router.patch("/:id/status", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
 
-        // Validate status
-        const validStatuses = ['Assigned', 'InProgress', 'Completed'];
-        if (!validStatuses.includes(status)) {
-            return res.status(400).json({ 
-                error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` 
-            });
-        }
-
-        const updateData = {
-            status,
-            updatedAt: new Date()
-        };
-
-        if (status === 'Completed') {
-            updateData.completedDate = new Date();
-        }
-
-        const result = await db.collection('workAssignments').findOneAndUpdate(
-            { _id: new ObjectId(id) },
-            { $set: updateData },
-            { returnDocument: 'after' }
-        );
-
-        if (!result.value) {
-            return res.status(404).json({ error: 'Work assignment not found' });
-        }
-
-        res.json({
-            message: 'Work assignment status updated',
-            assignment: result.value
-        });
-    } catch (error) {
-        console.error('Error updating work assignment status:', error);
-        res.status(500).json({ error: 'Failed to update work assignment status' });
+    // Validate status
+    const validStatuses = ["Pending", "In Progress", "Completed"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+      });
     }
+
+    const now = new Date().toISOString();
+    let updateFields = "status = ?, updatedAt = ?";
+    let updateValues = [status, now, id];
+
+    if (status === "Completed") {
+      updateFields = "status = ?, completed_date = ?, updatedAt = ?";
+      updateValues = [status, now.split("T")[0], now, id];
+    }
+
+    const result = await run(
+      `UPDATE work_assignments SET ${updateFields} WHERE id = ?`,
+      updateValues,
+    );
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: "Work assignment not found" });
+    }
+
+    res.json({
+      message: "Work assignment status updated",
+      status,
+    });
+  } catch (error) {
+    console.error("Error updating work assignment status:", error);
+    res.status(500).json({ error: "Failed to update work assignment status" });
+  }
 });
 
 // Delete work assignment
-router.delete('/:id', async (req, res) => {
-    try {
-        const db = getDB();
-        const { id } = req.params;
+router.delete("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
 
-        const result = await db.collection('workAssignments').deleteOne(
-            { _id: new ObjectId(id) }
-        );
+    const result = await run("DELETE FROM work_assignments WHERE id = ?", [id]);
 
-        if (result.deletedCount === 0) {
-            return res.status(404).json({ error: 'Work assignment not found' });
-        }
-
-        res.json({ message: 'Work assignment deleted successfully' });
-    } catch (error) {
-        console.error('Error deleting work assignment:', error);
-        res.status(500).json({ error: 'Failed to delete work assignment' });
+    if (result.changes === 0) {
+      return res.status(404).json({ error: "Work assignment not found" });
     }
+
+    res.json({ message: "Work assignment deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting work assignment:", error);
+    res.status(500).json({ error: "Failed to delete work assignment" });
+  }
 });
 
 // Get summary stats for a labour (for dashboard)
-router.get('/summary/labour/:labourId', async (req, res) => {
-    try {
-        const db = getDB();
-        const { labourId } = req.params;
-        const startDate = req.query.startDate;
-        const endDate = req.query.endDate;
+router.get("/summary/labour/:labourId", async (req, res) => {
+  try {
+    const { labourId } = req.params;
+    const startDate = req.query.startDate;
+    const endDate = req.query.endDate;
 
-        const query = { labourId: new ObjectId(labourId) };
+    let query = "SELECT * FROM work_assignments WHERE labour_id = ?";
+    let params = [labourId];
 
-        // Filter by date range if provided
-        if (startDate && endDate) {
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            query.assignedDate = {
-                $gte: start,
-                $lte: end
-            };
-        }
-
-        const assignments = await db.collection('workAssignments')
-            .find(query)
-            .toArray();
-
-        const totalWages = assignments.reduce((sum, a) => sum + a.totalWages, 0);
-        const totalQuantity = assignments.reduce((sum, a) => sum + a.quantity, 0);
-        const completedCount = assignments.filter(a => a.status === 'Completed').length;
-
-        res.json({
-            totalAssignments: assignments.length,
-            completedAssignments: completedCount,
-            totalWages,
-            totalQuantity,
-            assignments
-        });
-    } catch (error) {
-        console.error('Error fetching labour summary:', error);
-        res.status(500).json({ error: 'Failed to fetch labour summary' });
+    // Filter by date range if provided
+    if (startDate && endDate) {
+      query += " AND assigned_date BETWEEN ? AND ?";
+      params.push(startDate, endDate);
     }
+
+    const assignments = await runQuery(query, params);
+
+    const totalWages = assignments.reduce(
+      (sum, a) => sum + a.quantity * 110,
+      0,
+    );
+    const totalQuantity = assignments.reduce((sum, a) => sum + a.quantity, 0);
+    const completedCount = assignments.filter(
+      (a) => a.status === "Completed",
+    ).length;
+
+    res.json({
+      totalAssignments: assignments.length,
+      completedAssignments: completedCount,
+      totalWages,
+      totalQuantity,
+      assignments,
+    });
+  } catch (error) {
+    console.error("Error fetching labour summary:", error);
+    res.status(500).json({ error: "Failed to fetch labour summary" });
+  }
 });
 
 module.exports = router;

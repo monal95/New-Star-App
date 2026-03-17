@@ -1,18 +1,14 @@
 const express = require("express");
 const router = express.Router();
-const { ObjectId } = require("mongodb");
-const { getDB } = require("../config/db");
+const { runQuery, getRow, run } = require("../config/db");
 const { sendOrderStatusEmail } = require("../services/emailService");
 
 // Get all orders
 router.get("/", async (req, res) => {
   try {
-    const db = getDB();
-    const orders = await db
-      .collection("orders")
-      .find({})
-      .sort({ createdAt: -1 })
-      .toArray();
+    const orders = await runQuery(
+      "SELECT * FROM orders ORDER BY createdAt DESC",
+    );
     res.json(orders);
   } catch (error) {
     console.error("Error fetching orders:", error);
@@ -20,17 +16,17 @@ router.get("/", async (req, res) => {
   }
 });
 
-// Get civil orders (orders without companyId)
+// Get civil orders (orders without company_id)
 router.get("/civil", async (req, res) => {
   try {
-    const db = getDB();
     const { date } = req.query;
-
-    let query = { companyId: { $exists: false } };
+    let query = "SELECT * FROM orders WHERE company_id IS NULL";
+    let params = [];
 
     // If date is provided, filter by that specific date
     if (date) {
-      query.date = date;
+      query += " AND date = ?";
+      params.push(date);
     } else {
       // Otherwise, get current month's orders
       const now = new Date();
@@ -39,14 +35,13 @@ router.get("/civil", async (req, res) => {
       const monthPrefix = `${year}-${month}`;
 
       // Filter orders from current month
-      query.date = { $regex: `^${monthPrefix}` };
+      query += " AND date LIKE ?";
+      params.push(`${monthPrefix}%`);
     }
 
-    const orders = await db
-      .collection("orders")
-      .find(query)
-      .sort({ createdAt: -1 })
-      .toArray();
+    query += " ORDER BY createdAt DESC";
+
+    const orders = await runQuery(query, params);
     res.json(orders);
   } catch (error) {
     console.error("Error fetching civil orders:", error);
@@ -57,7 +52,6 @@ router.get("/civil", async (req, res) => {
 // Search for previous customers by name (for auto-fill)
 router.get("/search/customers", async (req, res) => {
   try {
-    const db = getDB();
     const { name } = req.query;
 
     if (!name || name.length < 2) {
@@ -65,48 +59,24 @@ router.get("/search/customers", async (req, res) => {
     }
 
     // Search for customers with matching names (case-insensitive)
-    // Only search civil orders (orders without companyId)
-    const customers = await db
-      .collection("orders")
-      .aggregate([
-        {
-          $match: {
-            companyId: { $exists: false },
-            name: { $regex: name, $options: "i" },
-          },
-        },
-        {
-          $sort: { createdAt: -1 },
-        },
-        {
-          $group: {
-            _id: { $toLower: "$name" },
-            name: { $first: "$name" },
-            phone: { $first: "$phone" },
-            email: { $first: "$email" },
-            shirt: { $first: "$shirt" },
-            pant: { $first: "$pant" },
-            lastOrderDate: { $first: "$date" },
-            orderCount: { $sum: 1 },
-          },
-        },
-        {
-          $project: {
-            _id: 0,
-            name: 1,
-            phone: 1,
-            email: 1,
-            shirt: 1,
-            pant: 1,
-            lastOrderDate: 1,
-            orderCount: 1,
-          },
-        },
-        {
-          $limit: 5,
-        },
-      ])
-      .toArray();
+    // Only search civil orders (orders without company_id)
+    const customers = await runQuery(
+      `SELECT 
+        LOWER(name) as id,
+        name,
+        phone,
+        email,
+        shirt,
+        pant,
+        MAX(date) as lastOrderDate,
+        COUNT(*) as orderCount
+      FROM orders 
+      WHERE company_id IS NULL AND LOWER(name) LIKE LOWER(?)
+      GROUP BY LOWER(name)
+      ORDER BY createdAt DESC
+      LIMIT 5`,
+      [`%${name}%`],
+    );
 
     res.json(customers);
   } catch (error) {
@@ -119,16 +89,15 @@ router.get("/search/customers", async (req, res) => {
 // IMPORTANT: This route must be defined BEFORE /:id to avoid being caught by it
 router.get("/generate/next-id", async (req, res) => {
   try {
-    const db = getDB();
-
     // Get current month and year
     const now = new Date();
     const currentMonth = now.getMonth() + 1;
     const currentYear = now.getFullYear();
     const currentMonthKey = `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
 
-    const counterCollection = db.collection("order_counters");
-    const counter = await counterCollection.findOne({ _id: "order_counter" });
+    const counter = await getRow("SELECT * FROM order_counters WHERE id = ?", [
+      "order_counter",
+    ]);
 
     let previewId = "ORD001";
     let shouldReset = false;
@@ -159,15 +128,9 @@ router.get("/generate/next-id", async (req, res) => {
 // Get single order by ID
 router.get("/:id", async (req, res) => {
   try {
-    // Validate order ID
-    if (!ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: "Invalid order ID format" });
-    }
-
-    const db = getDB();
-    const order = await db.collection("orders").findOne({
-      _id: new ObjectId(req.params.id),
-    });
+    const order = await getRow("SELECT * FROM orders WHERE id = ?", [
+      req.params.id,
+    ]);
 
     if (!order) {
       return res.status(404).json({ error: "Order not found" });
@@ -180,52 +143,48 @@ router.get("/:id", async (req, res) => {
 });
 
 // Helper function to generate order ID atomically (only during order creation)
-const generateOrderIdAtomic = async (db) => {
+const generateOrderIdAtomic = async () => {
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
   const currentYear = now.getFullYear();
   const currentMonthKey = `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
 
-  const counterCollection = db.collection("order_counters");
-  const counter = await counterCollection.findOne({ _id: "order_counter" });
+  const counter = await getRow("SELECT * FROM order_counters WHERE id = ?", [
+    "order_counter",
+  ]);
 
   if (!counter) {
     // First time initialization
-    await counterCollection.insertOne({
-      _id: "order_counter",
-      lastMonth: currentMonthKey,
-      count: 0,
-      lastResetDate: new Date(),
-    });
+    await run(
+      "INSERT INTO order_counters (id, lastMonth, count, lastResetDate) VALUES (?, ?, ?, ?)",
+      ["order_counter", currentMonthKey, 0, now.toISOString()],
+    );
   } else if (counter.lastMonth !== currentMonthKey) {
     // New month detected - reset counter
-    await counterCollection.updateOne(
-      { _id: "order_counter" },
-      {
-        $set: {
-          lastMonth: currentMonthKey,
-          count: 0,
-          lastResetDate: new Date(),
-        },
-      },
+    await run(
+      "UPDATE order_counters SET lastMonth = ?, count = ?, lastResetDate = ? WHERE id = ?",
+      [currentMonthKey, 0, now.toISOString(), "order_counter"],
     );
   }
 
   // Atomically increment and get the next ID
-  const updatedCounter = await counterCollection.findOneAndUpdate(
-    { _id: "order_counter" },
-    { $inc: { count: 1 } },
-    { returnDocument: "after" },
+  const result = await run(
+    "UPDATE order_counters SET count = count + 1 WHERE id = ?",
+    ["order_counter"],
   );
 
-  const nextNum = updatedCounter.value.count;
+  const updatedCounter = await getRow(
+    "SELECT * FROM order_counters WHERE id = ?",
+    ["order_counter"],
+  );
+
+  const nextNum = updatedCounter.count;
   return `ORD${String(nextNum).padStart(3, "0")}`;
 };
 
 // Create new order
 router.post("/", async (req, res) => {
   try {
-    const db = getDB();
     const {
       name,
       phone,
@@ -245,7 +204,7 @@ router.post("/", async (req, res) => {
     }
 
     // Generate order ID atomically - only increments when order is actually created
-    const orderId = await generateOrderIdAtomic(db);
+    const orderId = await generateOrderIdAtomic();
 
     const totalAmount =
       ((parseFloat(shirtAmount) || 500) + (parseFloat(pantAmount) || 400)) *
@@ -253,7 +212,38 @@ router.post("/", async (req, res) => {
     const advancePaid = parseFloat(advanceAmount) || 0;
     const remainingAmount = Math.max(0, totalAmount - advancePaid);
 
+    const now = new Date().toISOString();
+    const date = now.split("T")[0];
+
+    const result = await run(
+      `INSERT INTO orders (
+        orderId, name, phone, email, noOfSets, shirtAmount, pantAmount,
+        totalAmount, advanceAmount, remainingAmount, paymentMethod,
+        shirt, pant, status, date, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        orderId,
+        name,
+        phone,
+        email || "",
+        parseInt(noOfSets) || 1,
+        parseFloat(shirtAmount) || 500,
+        parseFloat(pantAmount) || 400,
+        totalAmount,
+        advancePaid,
+        remainingAmount,
+        paymentMethod || "Cash",
+        JSON.stringify(shirt || {}),
+        JSON.stringify(pant || {}),
+        "Pending",
+        date,
+        now,
+        now,
+      ],
+    );
+
     const newOrder = {
+      id: result.id,
       orderId,
       name,
       phone,
@@ -268,33 +258,14 @@ router.post("/", async (req, res) => {
       shirt: shirt || {},
       pant: pant || {},
       status: "Pending",
-      date: new Date().toISOString().split("T")[0],
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      date,
+      createdAt: now,
+      updatedAt: now,
     };
 
-    const result = await db.collection("orders").insertOne(newOrder);
-
-    // Increment the order counter ONLY after successful order creation
-    const now = new Date();
-    const currentMonth = now.getMonth() + 1;
-    const currentYear = now.getFullYear();
-    const currentMonthKey = `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
-
-    const counterCollection = db.collection("order_counters");
-    await counterCollection.updateOne(
-      { _id: "order_counter" },
-      {
-        $inc: { count: 1 },
-        $set: { lastMonth: currentMonthKey },
-      },
-      { upsert: true },
-    );
-
-    // Send email notification for civil orders (orders without companyId)
-    if (!newOrder.companyId && newOrder.email && newOrder.email.trim()) {
-      const orderWithId = { ...newOrder, _id: result.insertedId };
-      const emailResult = await sendOrderStatusEmail(orderWithId, "Pending");
+    // Send email notification for civil orders (orders without company_id)
+    if (newOrder.email && newOrder.email.trim()) {
+      const emailResult = await sendOrderStatusEmail(newOrder, "Pending");
       console.log("\n📧 Order Creation Email Result:");
       console.log(`   Success: ${emailResult.success}`);
       console.log(`   Message: ${emailResult.message}`);
@@ -306,7 +277,7 @@ router.post("/", async (req, res) => {
 
     res.status(201).json({
       message: "Order created successfully",
-      order: { ...newOrder, _id: result.insertedId },
+      order: newOrder,
     });
   } catch (error) {
     console.error("Error creating order:", error);
@@ -317,16 +288,10 @@ router.post("/", async (req, res) => {
 // Update order status
 router.patch("/:id/status", async (req, res) => {
   try {
-    const db = getDB();
     const { status } = req.body;
 
     if (!status) {
       return res.status(400).json({ error: "Status is required" });
-    }
-
-    // Validate order ID
-    if (!ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: "Invalid order ID format" });
     }
 
     const validStatuses = [
@@ -341,31 +306,27 @@ router.patch("/:id/status", async (req, res) => {
     }
 
     // Fetch the order first to get all details for email
-    const order = await db
-      .collection("orders")
-      .findOne({ _id: new ObjectId(req.params.id) });
+    const order = await getRow("SELECT * FROM orders WHERE id = ?", [
+      req.params.id,
+    ]);
 
     if (!order) {
       return res.status(404).json({ error: "Order not found" });
     }
 
     // Update order status in database
-    const result = await db.collection("orders").updateOne(
-      { _id: new ObjectId(req.params.id) },
-      {
-        $set: {
-          status,
-          updatedAt: new Date(),
-        },
-      },
+    const now = new Date().toISOString();
+    const result = await run(
+      "UPDATE orders SET status = ?, updatedAt = ? WHERE id = ?",
+      [status, now, req.params.id],
     );
 
-    if (result.matchedCount === 0) {
+    if (result.changes === 0) {
       return res.status(404).json({ error: "Order not found" });
     }
 
-    // Send email notification for civil orders (orders without companyId)
-    if (!order.companyId) {
+    // Send email notification for civil orders (orders without company_id)
+    if (!order.company_id) {
       const emailResult = await sendOrderStatusEmail(order, status);
       console.log("\n📧 Email Result:");
       console.log(`   Success: ${emailResult.success}`);
@@ -378,7 +339,7 @@ router.patch("/:id/status", async (req, res) => {
 
     res.json({
       message: "Status updated successfully",
-      emailSent: !order.companyId,
+      emailSent: !order.company_id,
     });
   } catch (error) {
     console.error("Error updating status:", error);
@@ -389,20 +350,25 @@ router.patch("/:id/status", async (req, res) => {
 // Update entire order
 router.put("/:id", async (req, res) => {
   try {
-    // Validate order ID
-    if (!ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: "Invalid order ID format" });
-    }
-
-    const db = getDB();
-    const updateData = { ...req.body, updatedAt: new Date() };
+    const updateData = { ...req.body };
     delete updateData._id;
+    delete updateData.id;
 
-    const result = await db
-      .collection("orders")
-      .updateOne({ _id: new ObjectId(req.params.id) }, { $set: updateData });
+    // Build dynamic SET clause
+    const fields = Object.keys(updateData);
+    const values = Object.values(updateData);
+    values.push(new Date().toISOString()); // For updatedAt
+    values.push(req.params.id); // For WHERE clause
 
-    if (result.matchedCount === 0) {
+    const setClause =
+      fields.map((field) => `${field} = ?`).join(", ") + ", updatedAt = ?";
+
+    const result = await run(
+      `UPDATE orders SET ${setClause} WHERE id = ?`,
+      values,
+    );
+
+    if (result.changes === 0) {
       return res.status(404).json({ error: "Order not found" });
     }
 
@@ -416,17 +382,11 @@ router.put("/:id", async (req, res) => {
 // Delete order
 router.delete("/:id", async (req, res) => {
   try {
-    // Validate order ID
-    if (!ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: "Invalid order ID format" });
-    }
+    const result = await run("DELETE FROM orders WHERE id = ?", [
+      req.params.id,
+    ]);
 
-    const db = getDB();
-    const result = await db.collection("orders").deleteOne({
-      _id: new ObjectId(req.params.id),
-    });
-
-    if (result.deletedCount === 0) {
+    if (result.changes === 0) {
       return res.status(404).json({ error: "Order not found" });
     }
 
