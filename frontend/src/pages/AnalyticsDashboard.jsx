@@ -40,7 +40,18 @@ const filterOrdersByDateRange = (orders, dateRange) => {
   }
 
   return orders.filter((order) => {
-    const orderDate = new Date(order.createdAt || order.orderDate);
+    // Try multiple date fields: date (YYYY-MM-DD), createdAt, orderDate
+    let orderDate;
+    if (order.date) {
+      orderDate = new Date(order.date);
+    } else if (order.createdAt) {
+      orderDate = new Date(order.createdAt);
+    } else if (order.orderDate) {
+      orderDate = new Date(order.orderDate);
+    } else {
+      return false;
+    }
+
     return orderDate >= startDate && orderDate <= now;
   });
 };
@@ -82,7 +93,18 @@ const processOrdersTrend = (orders) => {
   const trendMap = {};
 
   orders.forEach((order) => {
-    const date = new Date(order.createdAt || order.orderDate);
+    // Use date field (YYYY-MM-DD) or createdAt as fallback
+    let date;
+    if (order.date) {
+      date = new Date(order.date);
+    } else if (order.createdAt) {
+      date = new Date(order.createdAt);
+    } else if (order.orderDate) {
+      date = new Date(order.orderDate);
+    } else {
+      return; // Skip if no date available
+    }
+
     const dateKey = date.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -103,13 +125,42 @@ const processDressTypes = (orders) => {
   const dressTypeMap = {};
 
   orders.forEach((order) => {
-    const dressType = order.dressType || "Unknown";
-    dressTypeMap[dressType] = (dressTypeMap[dressType] || 0) + 1;
+    // Determine dress type from actual data structure (shirt/pant objects)
+    let dressType = "Custom Order";
+    const hasShirt =
+      order.shirt &&
+      typeof order.shirt === "object" &&
+      Object.keys(order.shirt).length > 0;
+    const hasPant =
+      order.pant &&
+      typeof order.pant === "object" &&
+      Object.keys(order.pant).length > 0;
+
+    if (hasShirt && hasPant) {
+      dressType = "Shirt & Pant";
+    } else if (hasShirt) {
+      dressType = "Shirt";
+    } else if (hasPant) {
+      dressType = "Pant";
+    }
+
+    const tailor = order.tailor || "Not Assigned";
+    const key = `${dressType}_${tailor}`;
+
+    if (!dressTypeMap[key]) {
+      dressTypeMap[key] = {
+        name: dressType,
+        tailor: tailor,
+        value: 0,
+      };
+    }
+    dressTypeMap[key].value += 1;
   });
 
-  return Object.entries(dressTypeMap).map(([name, value]) => ({
-    name,
-    value,
+  return Object.values(dressTypeMap).map((item) => ({
+    name: item.name,
+    tailor: item.tailor,
+    value: item.value,
   }));
 };
 
@@ -117,7 +168,7 @@ const processTailorProductivity = (orders) => {
   const tailorMap = {};
 
   orders.forEach((order) => {
-    const tailor = order.tailorName || order.assignedTailor || "Unassigned";
+    const tailor = order.tailor || "Not Assigned";
     tailorMap[tailor] = (tailorMap[tailor] || 0) + 1;
   });
 
@@ -148,11 +199,40 @@ const processMonthlyRevenue = (orders) => {
   ];
 
   orders.forEach((order) => {
-    const date = new Date(order.createdAt || order.orderDate);
-    if (!isNaN(date.getTime())) {
-      const monthKey = months[date.getMonth()];
-      const price = order.orderPrice || order.price || 0;
-      monthlyMap[monthKey] = (monthlyMap[monthKey] || 0) + price;
+    try {
+      // Try to get the date from various possible fields (date is primary for civil orders)
+      let date = null;
+
+      if (order.date) {
+        date = new Date(order.date);
+      } else if (order.createdAt) {
+        date = new Date(order.createdAt);
+      } else if (order.orderDate) {
+        date = new Date(order.orderDate);
+      } else if (order.deliveryDate) {
+        date = new Date(order.deliveryDate);
+      }
+
+      // Only process if we have a valid date
+      if (date && !isNaN(date.getTime())) {
+        const monthKey = months[date.getMonth()];
+        // totalAmount is the primary field for civil orders
+        const price = Number(
+          order.totalAmount ||
+            order.orderPrice ||
+            order.price ||
+            order.amount ||
+            0,
+        );
+
+        // Only count valid prices (greater than 0)
+        if (price > 0) {
+          monthlyMap[monthKey] = (monthlyMap[monthKey] || 0) + price;
+        }
+      }
+    } catch (e) {
+      // Skip orders with invalid dates
+      console.warn("Could not process date for order:", order._id, e);
     }
   });
 
@@ -164,6 +244,36 @@ const processMonthlyRevenue = (orders) => {
 
 // Normalize API response to table format
 const normalizeOrderData = (order) => {
+  // Get customer name - primary field in database is "name"
+  const customerName = order.name || order.customerName || "Unknown";
+
+  // Get tailor information - no direct tailor field in civil orders
+  const tailor = order.tailor || order.tailorName || "Not Assigned";
+
+  // Get price/amount - totalAmount is the main field for civil orders
+  const price =
+    order.totalAmount || order.orderPrice || order.price || order.amount || 0;
+
+  // Determine dress type from shirt/pant objects
+  // Civil orders store customization data in shirt {} and pant {} objects
+  let dressType = "Custom Order";
+  const hasShirt =
+    order.shirt &&
+    typeof order.shirt === "object" &&
+    Object.keys(order.shirt).length > 0;
+  const hasPant =
+    order.pant &&
+    typeof order.pant === "object" &&
+    Object.keys(order.pant).length > 0;
+
+  if (hasShirt && hasPant) {
+    dressType = "Shirt & Pant";
+  } else if (hasShirt) {
+    dressType = "Shirt";
+  } else if (hasPant) {
+    dressType = "Pant";
+  }
+
   return {
     _id: order._id,
     id: order.id || Math.random(),
@@ -172,18 +282,13 @@ const normalizeOrderData = (order) => {
       order.order_id ||
       order._id?.toString()?.slice(-6) ||
       "N/A",
-    customerName:
-      order.customerName || order.customer_name || order.customer || "Unknown",
-    dressType: order.dressType || order.dress_type || "Unknown",
-    tailor:
-      order.tailorName ||
-      order.tailor_name ||
-      order.tailor ||
-      order.assignedTailor ||
-      "Unassigned",
-    price: order.orderPrice || order.price || 0,
+    customerName: customerName,
+    dressType: dressType,
+    tailor: String(tailor).trim() || "Not Assigned",
+    price: Number(price) || 0,
     status: order.status || "Pending",
     deliveryDate:
+      order.date ||
       order.deliveryDate ||
       order.delivery_date ||
       order.dueDate ||
@@ -217,6 +322,10 @@ const AnalyticsDashboard = () => {
     recentOrders: [],
   });
 
+  // Filter options (dynamically populated)
+  const [tailorOptions, setTailorOptions] = useState([]);
+  const [dressTypeOptions, setDressTypeOptions] = useState([]);
+
   // Fetch Analytics Data from API
   useEffect(() => {
     const fetchAnalyticsData = async () => {
@@ -233,7 +342,17 @@ const AnalyticsDashboard = () => {
           const startDate = new Date(customDateStart);
           const endDate = new Date(customDateEnd);
           filteredOrders = orders.filter((order) => {
-            const orderDate = new Date(order.createdAt || order.orderDate);
+            // Use date field (YYYY-MM-DD) or createdAt as fallback
+            let orderDate;
+            if (order.date) {
+              orderDate = new Date(order.date);
+            } else if (order.createdAt) {
+              orderDate = new Date(order.createdAt);
+            } else if (order.orderDate) {
+              orderDate = new Date(order.orderDate);
+            } else {
+              return false;
+            }
             return orderDate >= startDate && orderDate <= endDate;
           });
         } else {
@@ -242,15 +361,39 @@ const AnalyticsDashboard = () => {
 
         // Further filter by dress type, tailor, and status
         const finalFilteredOrders = filteredOrders.filter((order) => {
+          const tailor = order.tailor || "Not Assigned";
+
+          // Determine dress type from shirt/pant objects
+          let dressType = "Custom Order";
+          const hasShirt =
+            order.shirt &&
+            typeof order.shirt === "object" &&
+            Object.keys(order.shirt).length > 0;
+          const hasPant =
+            order.pant &&
+            typeof order.pant === "object" &&
+            Object.keys(order.pant).length > 0;
+
+          if (hasShirt && hasPant) {
+            dressType = "Shirt & Pant";
+          } else if (hasShirt) {
+            dressType = "Shirt";
+          } else if (hasPant) {
+            dressType = "Pant";
+          }
+
           const isDressTypeMatch =
             dressTypeFilter === "all" ||
-            (order.dressType &&
-              order.dressType.toLowerCase() === dressTypeFilter.toLowerCase());
+            (dressType &&
+              dressType.toLowerCase() === dressTypeFilter.toLowerCase());
+          const isTailorMatch =
+            tailorFilter === "all" ||
+            (tailor && tailor.toLowerCase() === tailorFilter.toLowerCase());
           const isOrderStatusMatch =
             orderStatusFilter === "all" ||
             (order.status &&
               order.status.toLowerCase() === orderStatusFilter.toLowerCase());
-          return isDressTypeMatch && isOrderStatusMatch;
+          return isDressTypeMatch && isTailorMatch && isOrderStatusMatch;
         });
 
         // Calculate KPIs
@@ -326,6 +469,42 @@ const AnalyticsDashboard = () => {
         const dressTypesData = processDressTypes(filteredOrders);
         const tailorProductivityData =
           processTailorProductivity(filteredOrders);
+
+        // Extract unique tailors and dress types from the data
+        const uniqueTailors = [
+          ...new Set(
+            filteredOrders.map((order) => order.tailor || "Not Assigned"),
+          ),
+        ].sort();
+
+        // Extract unique dress types by checking shirt/pant objects
+        const uniqueDressTypes = [
+          ...new Set(
+            filteredOrders.map((order) => {
+              const hasShirt =
+                order.shirt &&
+                typeof order.shirt === "object" &&
+                Object.keys(order.shirt).length > 0;
+              const hasPant =
+                order.pant &&
+                typeof order.pant === "object" &&
+                Object.keys(order.pant).length > 0;
+
+              if (hasShirt && hasPant) {
+                return "Shirt & Pant";
+              } else if (hasShirt) {
+                return "Shirt";
+              } else if (hasPant) {
+                return "Pant";
+              } else {
+                return "Custom Order";
+              }
+            }),
+          ),
+        ].sort();
+
+        setTailorOptions(uniqueTailors);
+        setDressTypeOptions(uniqueDressTypes);
 
         // Normalize orders data for the table
         const normalizedRecentOrders = finalFilteredOrders
@@ -515,8 +694,11 @@ const AnalyticsDashboard = () => {
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-900"
             >
               <option value="all">All Types</option>
-              <option value="shirt">Shirt</option>
-              <option value="pants">Pants</option>
+              {dressTypeOptions.map((type) => (
+                <option key={type} value={type.toLowerCase()}>
+                  {type}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -530,11 +712,11 @@ const AnalyticsDashboard = () => {
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-900"
             >
               <option value="all">All Tailors</option>
-              <option value="sanjay">Sanjay</option>
-              <option value="anwar">Anwar</option>
-              <option value="dhana">Dhana</option>
-              <option value="ramesh">Ramesh</option>
-              <option value="vikram">Vikram</option>
+              {tailorOptions.map((tailor) => (
+                <option key={tailor} value={tailor.toLowerCase()}>
+                  {tailor}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -564,7 +746,11 @@ const AnalyticsDashboard = () => {
           </h3>
           <RevenueChart data={chartData.monthlyRevenue} isLoading={isLoading} />
         </div>
-        <DressTypePieChart data={chartData.dressTypes} isLoading={isLoading} />
+        <DressTypePieChart
+          data={chartData.dressTypes}
+          isLoading={isLoading}
+          selectedTailor={tailorFilter}
+        />
       </div>
 
       {/* Charts Section - Second Row */}

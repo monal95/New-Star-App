@@ -1,1409 +1,2578 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Users, Clock, CheckCircle, IndianRupee, X, Shirt, PanelBottom, Eye, Plus, Save, Calendar, AlertCircle, Zap } from 'lucide-react';
-import { ordersAPI, labourAPI, workAssignmentsAPI } from '../services/api';
-import Toast from './Toast';
+import React, { useState, useMemo, useEffect } from "react";
+import {
+  Users,
+  Clock,
+  CheckCircle,
+  IndianRupee,
+  X,
+  Shirt,
+  PanelBottom,
+  Eye,
+  Plus,
+  Save,
+  Calendar,
+  AlertCircle,
+  Zap,
+  ShoppingCart,
+  Ruler,
+  Sparkles,
+} from "lucide-react";
+import { ordersAPI, labourAPI, workAssignmentsAPI } from "../services/api";
+import Toast from "./Toast";
 
 const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
-    // Month refresh tracking
-    const [monthRefreshNotice, setMonthRefreshNotice] = useState('');
-    const [dateFilteredOrders, setDateFilteredOrders] = useState(null);
-    const [timePeriod, setTimePeriod] = useState('all');
-    const [selectedDate, setSelectedDate] = useState('');
-    const [activeFilter, setActiveFilter] = useState('all'); // all, pending, completed
-    const [showRevenueModal, setShowRevenueModal] = useState(false);
-    const [showMeasurementsModal, setShowMeasurementsModal] = useState(false);
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [selectedOrder, setSelectedOrder] = useState(null);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [formError, setFormError] = useState('');
-    const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  // Month refresh tracking
+  const [monthRefreshNotice, setMonthRefreshNotice] = useState("");
+  const [dateFilteredOrders, setDateFilteredOrders] = useState(null);
+  const [timePeriod, setTimePeriod] = useState("all");
+  const [selectedDate, setSelectedDate] = useState("");
+  const [activeFilter, setActiveFilter] = useState("all"); // all, pending, completed
+  const [showRevenueModal, setShowRevenueModal] = useState(false);
+  const [showMeasurementsModal, setShowMeasurementsModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [toast, setToast] = useState({
+    show: false,
+    message: "",
+    type: "success",
+  });
 
-    // Create Order Form State
-    const [formData, setFormData] = useState({
-        orderId: '',
-        name: '',
-        phone: '',
-        email: '',
-        noOfSets: 1,
-        shirtAmount: 500,
-        pantAmount: 400,
-        advanceAmount: 0,
-        paymentMethod: 'Cash',
-        shirt: {
-            length: '',
-            shoulder: '',
-            sleeve: '',
-            chest: '',
-            collar: '',
-            waist: ''
-        },
-        pant: {
-            length: '',
-            waist: '',
-            hip: '',
-            thigh: '',
-            knee: '',
-            bottom: ''
+  // Create Order Form State - Multi-step
+  const [orderStep, setOrderStep] = useState(1); // 1: Services, 2: Measurements, 3: Payment
+  const [selectedServices, setSelectedServices] = useState({
+    shirt: false,
+    pant: false,
+    embroidery: false,
+  });
+  const [embroideryText, setEmbroideryText] = useState("");
+
+  const [formData, setFormData] = useState({
+    orderId: "",
+    name: "",
+    phone: "",
+    email: "",
+    noOfSets: 1,
+    shirtAmount: "",
+    pantAmount: "",
+    advanceAmount: 0,
+    paymentMethod: "Cash",
+    shirt: {
+      length: "",
+      shoulder: "",
+      sleeve: "",
+      chest: "",
+      collar: "",
+      waist: "",
+    },
+    pant: {
+      length: "",
+      waist: "",
+      hip: "",
+      thigh: "",
+      knee: "",
+      bottom: "",
+    },
+  });
+
+  // Customer suggestions state
+  const [customerSuggestions, setCustomerSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searchingCustomers, setSearchingCustomers] = useState(false);
+
+  // Work Assignment State
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [labourList, setLabourList] = useState([]);
+  const [loadingLabour, setLoadingLabour] = useState(false);
+  const [availableWorkTypes, setAvailableWorkTypes] = useState([
+    "Pant",
+    "Shirt",
+    "Ironing",
+    "Embroidery",
+  ]);
+  const [assignmentData, setAssignmentData] = useState({
+    labourId: "",
+    workType: "",
+    quantity: 1,
+    customWage: "",
+  });
+
+  // Check for month boundary and reset order IDs
+  useEffect(() => {
+    const checkMonthReset = async () => {
+      try {
+        // Get next ID which will also check for month reset
+        const response = await ordersAPI.getNextId();
+
+        if (response.monthReset) {
+          setMonthRefreshNotice(
+            `✓ New month detected! Orders for ${response.currentMonth} have been reset. Order ID counter reset to ORD001`,
+          );
+          setTimeout(() => setMonthRefreshNotice(""), 5000);
+
+          // Refresh orders when month changes
+          if (refreshOrders) {
+            refreshOrders();
+          }
         }
+      } catch (error) {
+        console.error("Error checking month reset:", error);
+      }
+    };
+
+    checkMonthReset();
+  }, [refreshOrders]);
+
+  // Handle date-based filtering - fetch from database
+  const handleDateChange = async (e) => {
+    const selectedDateValue = e.target.value;
+    setSelectedDate(selectedDateValue);
+    setTimePeriod(""); // Clear time period when specific date is selected
+
+    // Fetch orders for the selected date from database
+    if (selectedDateValue) {
+      try {
+        const dbOrders = await ordersAPI.getCivil(selectedDateValue);
+        setDateFilteredOrders(dbOrders);
+      } catch (error) {
+        console.error("Failed to fetch orders for date:", error);
+        setDateFilteredOrders([]);
+      }
+    } else {
+      setDateFilteredOrders(null);
+    }
+  };
+
+  const handleOpenCreateModal = () => {
+    setFormError("");
+    setFormData((prev) => ({ ...prev, orderId: "Auto" }));
+    setShowCreateModal(true);
+  };
+
+  const handleCloseCreateModal = () => {
+    setShowCreateModal(false);
+    setOrderStep(1);
+    setSelectedServices({ shirt: false, pant: false, embroidery: false });
+    setEmbroideryText("");
+    setFormData({
+      orderId: "",
+      name: "",
+      phone: "",
+      email: "",
+      noOfSets: 1,
+      shirtAmount: 500,
+      pantAmount: 400,
+      advanceAmount: 0,
+      paymentMethod: "Cash",
+      shirt: {
+        length: "",
+        shoulder: "",
+        sleeve: "",
+        chest: "",
+        collar: "",
+        waist: "",
+      },
+      pant: { length: "", waist: "", hip: "", thigh: "", knee: "", bottom: "" },
     });
+    setFormError("");
+    setCustomerSuggestions([]);
+    setShowSuggestions(false);
+  };
 
-    // Customer suggestions state
-    const [customerSuggestions, setCustomerSuggestions] = useState([]);
-    const [showSuggestions, setShowSuggestions] = useState(false);
-    const [searchingCustomers, setSearchingCustomers] = useState(false);
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
 
-    // Work Assignment State
-    const [showAssignModal, setShowAssignModal] = useState(false);
-    const [labourList, setLabourList] = useState([]);
-    const [loadingLabour, setLoadingLabour] = useState(false);
-    const [availableWorkTypes, setAvailableWorkTypes] = useState(['Pant', 'Shirt', 'Ironing', 'Embroidery']);
-    const [assignmentData, setAssignmentData] = useState({
-        labourId: '',
-        workType: '',
-        quantity: 1,
-        customWage: ''
+  const handleShirtChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      shirt: { ...prev.shirt, [name]: value },
+    }));
+  };
+
+  const handlePantChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      pant: { ...prev.pant, [name]: value },
+    }));
+  };
+
+  const handleSubmitOrder = async (e) => {
+    e.preventDefault();
+    setFormError("");
+    setIsSubmitting(true);
+
+    // Validation - orderId is auto-generated on backend, not required from frontend
+    if (!formData.name || !formData.phone) {
+      setFormError("Name and Phone are required");
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Validation: At least one service must be selected
+    if (
+      !selectedServices.shirt &&
+      !selectedServices.pant &&
+      !selectedServices.embroidery
+    ) {
+      setFormError(
+        "Please select at least one service (Shirt, Pant, or Embroidery)",
+      );
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Validation: If embroidery selected, text must be provided
+    if (selectedServices.embroidery && !embroideryText.trim()) {
+      setFormError("Please specify what to print for embroidery");
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      // Prepare order data - only include selected services
+      const orderData = {
+        ...formData,
+        shirt: selectedServices.shirt ? formData.shirt : {},
+        pant: selectedServices.pant ? formData.pant : {},
+        embroidery: selectedServices.embroidery ? { text: embroideryText } : {},
+      };
+
+      // Don't send orderId - backend generates it atomically
+      const { orderId: _orderId, ...orderDataWithoutId } = orderData;
+      await ordersAPI.create(orderDataWithoutId);
+
+      // Reset form and close modal
+      handleCloseCreateModal();
+      setOrderStep(1);
+      setSelectedServices({ shirt: false, pant: false, embroidery: false });
+      setEmbroideryText("");
+
+      if (refreshOrders) refreshOrders();
+      setToast({ show: true, message: "Order Created", type: "success" });
+    } catch (error) {
+      setFormError(error.message || "Failed to create order");
+      setToast({ show: true, message: "Order Not Stored", type: "error" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const calculateTotal = () => {
+    const sets = parseInt(formData.noOfSets) || 1;
+    const shirt = parseFloat(formData.shirtAmount) || 0;
+    const pant = parseFloat(formData.pantAmount) || 0;
+    return (shirt + pant) * sets;
+  };
+
+  const calculateRemainingAmount = () => {
+    const total = calculateTotal();
+    const advance = parseFloat(formData.advanceAmount) || 0;
+    return Math.max(0, total - advance);
+  };
+
+  // Search for previous customers by name
+  const searchCustomers = async (searchName) => {
+    if (!searchName || searchName.length < 2) {
+      setCustomerSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    try {
+      setSearchingCustomers(true);
+      const suggestions = await ordersAPI.searchCustomers(searchName);
+      setCustomerSuggestions(suggestions);
+      setShowSuggestions(suggestions.length > 0);
+    } catch (error) {
+      console.error("Error searching customers:", error);
+      setCustomerSuggestions([]);
+      setShowSuggestions(false);
+    } finally {
+      setSearchingCustomers(false);
+    }
+  };
+
+  // Handle customer name change with debounced search
+  const handleNameChange = (e) => {
+    const { value } = e.target;
+    setFormData((prev) => ({ ...prev, name: value }));
+
+    // Debounce the search
+    clearTimeout(window.customerSearchTimeout);
+    window.customerSearchTimeout = setTimeout(() => {
+      searchCustomers(value);
+    }, 300);
+  };
+
+  // Select a previous customer
+  const selectCustomer = (customer) => {
+    setFormData((prev) => ({
+      ...prev,
+      name: customer.name,
+      phone: customer.phone || "",
+      email: customer.email || "",
+      shirt: customer.shirt || prev.shirt,
+      pant: customer.pant || prev.pant,
+      // Note: Amount fields are NOT auto-filled
+    }));
+    setShowSuggestions(false);
+    setCustomerSuggestions([]);
+  };
+
+  // Filter only civil orders (orders without companyId)
+  const civilOrders = useMemo(() => {
+    // If date-filtered orders are available, use those
+    if (selectedDate && dateFilteredOrders !== null) {
+      return dateFilteredOrders.filter((order) => !order.companyId);
+    }
+    // Otherwise use the orders from parent component
+    return orders.filter((order) => !order.companyId);
+  }, [orders, selectedDate, dateFilteredOrders]);
+
+  // Filter orders by time period or specific date
+  const filteredByTime = useMemo(() => {
+    const now = new Date();
+    return civilOrders.filter((order) => {
+      // If a specific date is selected, filter by that date
+      if (selectedDate) {
+        const orderDate = new Date(order.date).toISOString().split("T")[0];
+        return orderDate === selectedDate;
+      }
+
+      if (timePeriod === "all") return true;
+      const orderDate = new Date(order.date);
+      const diffDays = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24));
+
+      switch (timePeriod) {
+        case "today":
+          return diffDays === 0;
+        case "week":
+          return diffDays <= 7;
+        case "month":
+          return diffDays <= 30;
+        case "year":
+          return diffDays <= 365;
+        default:
+          return true;
+      }
     });
+  }, [civilOrders, timePeriod, selectedDate]);
 
-    // Check for month boundary and reset order IDs
-    useEffect(() => {
-        const checkMonthReset = async () => {
-            try {
-                // Get next ID which will also check for month reset
-                const response = await ordersAPI.getNextId();
-                
-                if (response.monthReset) {
-                    setMonthRefreshNotice(`✓ New month detected! Orders for ${response.currentMonth} have been reset. Order ID counter reset to ORD001`);
-                    setTimeout(() => setMonthRefreshNotice(''), 5000);
-                    
-                    // Refresh orders when month changes
-                    if (refreshOrders) {
-                        refreshOrders();
-                    }
-                }
-            } catch (error) {
-                console.error('Error checking month reset:', error);
-            }
-        };
-        
-        checkMonthReset();
-    }, [refreshOrders]);
+  // Calculate stats
+  const stats = useMemo(() => {
+    const total = filteredByTime.length;
+    const pending = filteredByTime.filter(
+      (o) => o.status === "Pending" || o.status === "In Progress",
+    ).length;
+    const completed = filteredByTime.filter(
+      (o) => o.status === "Delivered" || o.status === "Completed",
+    ).length;
 
-    // Handle date-based filtering - fetch from database
-    const handleDateChange = async (e) => {
-        const selectedDateValue = e.target.value;
-        setSelectedDate(selectedDateValue);
-        setTimePeriod(''); // Clear time period when specific date is selected
-        
-        // Fetch orders for the selected date from database
-        if (selectedDateValue) {
-            try {
-                const dbOrders = await ordersAPI.getCivil(selectedDateValue);
-                setDateFilteredOrders(dbOrders);
-            } catch (error) {
-                console.error('Failed to fetch orders for date:', error);
-                setDateFilteredOrders([]);
-            }
-        } else {
-            setDateFilteredOrders(null);
-        }
-    };
+    // Calculate revenue only from delivered orders using actual order amounts
+    const deliveredOrders = filteredByTime.filter(
+      (o) => o.status === "Delivered" || o.status === "Completed",
+    );
 
-    // Preview Order ID when modal opens (does not increment - just for display)
-    const previewOrderId = async () => {
-        try {
-            const response = await ordersAPI.getNextId();
-            setFormData(prev => ({ ...prev, orderId: response.nextId }));
-        } catch {
-            setFormData(prev => ({ ...prev, orderId: 'Auto' }));
-        }
-    };
+    // Calculate revenue from actual order prices
+    const revenue = deliveredOrders.reduce((sum, o) => {
+      const sets = parseInt(o.noOfSets) || 1;
+      const shirtPrice = parseFloat(o.shirtAmount) || 0;
+      const pantPrice = parseFloat(o.pantAmount) || 0;
+      return sum + (shirtPrice + pantPrice) * sets;
+    }, 0);
 
-    const handleOpenCreateModal = () => {
-        setFormError('');
-        previewOrderId();
-        setShowCreateModal(true);
-    };
+    // Shirt and Pant revenue breakdown using actual prices
+    const shirtRevenue = deliveredOrders.reduce((sum, o) => {
+      const sets = parseInt(o.noOfSets) || 1;
+      const shirtPrice = parseFloat(o.shirtAmount) || 0;
+      return sum + shirtPrice * sets;
+    }, 0);
 
-    const handleCloseCreateModal = () => {
-        setShowCreateModal(false);
-        setFormData({
-            orderId: '',
-            name: '',
-            phone: '',
-            email: '',
-            noOfSets: 1,
-            shirtAmount: 500,
-            pantAmount: 400,
-            advanceAmount: 0,
-            paymentMethod: 'Cash',
-            shirt: { length: '', shoulder: '', sleeve: '', chest: '', collar: '', waist: '' },
-            pant: { length: '', waist: '', hip: '', thigh: '', knee: '', bottom: '' }
-        });
-        setFormError('');
-        setCustomerSuggestions([]);
-        setShowSuggestions(false);
-    };
+    const pantRevenue = deliveredOrders.reduce((sum, o) => {
+      const sets = parseInt(o.noOfSets) || 1;
+      const pantPrice = parseFloat(o.pantAmount) || 0;
+      return sum + pantPrice * sets;
+    }, 0);
 
-    const handleInputChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
+    return { total, pending, completed, revenue, shirtRevenue, pantRevenue };
+  }, [filteredByTime]);
 
-    const handleShirtChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            shirt: { ...prev.shirt, [name]: value }
-        }));
-    };
+  // Filter orders for display
+  const displayOrders = useMemo(() => {
+    switch (activeFilter) {
+      case "pending":
+        return filteredByTime.filter(
+          (o) => o.status === "Pending" || o.status === "In Progress",
+        );
+      case "completed":
+        return filteredByTime.filter(
+          (o) => o.status === "Delivered" || o.status === "Completed",
+        );
+      default:
+        return filteredByTime;
+    }
+  }, [filteredByTime, activeFilter]);
 
-    const handlePantChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            pant: { ...prev.pant, [name]: value }
-        }));
-    };
+  const handleStatusChange = (orderId, newStatus) => {
+    updateOrderStatus(orderId, newStatus);
+  };
 
-    const handleSubmitOrder = async (e) => {
-        e.preventDefault();
-        setFormError('');
-        setIsSubmitting(true);
+  const handleCardClick = (type) => {
+    if (type === "revenue") {
+      setShowRevenueModal(true);
+    } else if (type === "pending") {
+      setActiveFilter("pending");
+    } else if (type === "completed") {
+      setActiveFilter("completed");
+    } else {
+      setActiveFilter("all");
+    }
+  };
 
-        // Validation - orderId is auto-generated on backend, not required from frontend
-        if (!formData.name || !formData.phone) {
-            setFormError('Name and Phone are required');
-            setIsSubmitting(false);
-            return;
-        }
+  const viewMeasurements = (order) => {
+    setSelectedOrder(order);
+    setShowMeasurementsModal(true);
+  };
 
-        try {
-            // Don't send orderId - backend generates it atomically
-            const { orderId: _orderId, ...orderDataWithoutId } = formData;
-            await ordersAPI.create(orderDataWithoutId);
-            handleCloseCreateModal();
-            if (refreshOrders) refreshOrders();
-            setToast({ show: true, message: 'Order Created', type: 'success' });
-        } catch (error) {
-            setFormError(error.message || 'Failed to create order');
-            setToast({ show: true, message: 'Order Not Stored', type: 'error' });
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
+  // Clear date filter
+  const clearDateFilter = () => {
+    setSelectedDate("");
+    setTimePeriod("all");
+    setDateFilteredOrders(null);
+  };
 
-    const calculateTotal = () => {
-        const sets = parseInt(formData.noOfSets) || 1;
-        const shirt = parseFloat(formData.shirtAmount) || 0;
-        const pant = parseFloat(formData.pantAmount) || 0;
-        return (shirt + pant) * sets;
-    };
+  // Load labour list for assignment
+  const loadLabourList = async () => {
+    try {
+      setLoadingLabour(true);
+      const labours = await labourAPI.getAll();
+      setLabourList(labours || []);
+    } catch (error) {
+      console.error("Error loading labour list:", error);
+      setToast({
+        show: true,
+        message: "Failed to load labour list",
+        type: "error",
+      });
+    } finally {
+      setLoadingLabour(false);
+    }
+  };
 
-    const calculateRemainingAmount = () => {
-        const total = calculateTotal();
-        const advance = parseFloat(formData.advanceAmount) || 0;
-        return Math.max(0, total - advance);
-    };
+  // Fetch already assigned work types and get available work types based on order
+  const fetchAssignedWorkTypes = async (order) => {
+    try {
+      const assignments = await workAssignmentsAPI.getByOrder(
+        order.orderId || order._id,
+      );
+      const assignedWorkTypes = assignments.map((a) => a.workType);
 
-    // Search for previous customers by name
-    const searchCustomers = async (searchName) => {
-        if (!searchName || searchName.length < 2) {
-            setCustomerSuggestions([]);
-            setShowSuggestions(false);
-            return;
-        }
+      // Determine what work types the customer actually ordered
+      const orderedWorkTypes = [];
 
-        try {
-            setSearchingCustomers(true);
-            const suggestions = await ordersAPI.searchCustomers(searchName);
-            setCustomerSuggestions(suggestions);
-            setShowSuggestions(suggestions.length > 0);
-        } catch (error) {
-            console.error('Error searching customers:', error);
-            setCustomerSuggestions([]);
-            setShowSuggestions(false);
-        } finally {
-            setSearchingCustomers(false);
-        }
-    };
+      // Check if order has shirt
+      if (
+        order.shirt &&
+        typeof order.shirt === "object" &&
+        Object.keys(order.shirt).length > 0
+      ) {
+        orderedWorkTypes.push("Shirt");
+      }
 
-    // Handle customer name change with debounced search
-    const handleNameChange = (e) => {
-        const { value } = e.target;
-        setFormData(prev => ({ ...prev, name: value }));
-        
-        // Debounce the search
-        clearTimeout(window.customerSearchTimeout);
-        window.customerSearchTimeout = setTimeout(() => {
-            searchCustomers(value);
-        }, 300);
-    };
+      // Check if order has pant
+      if (
+        order.pant &&
+        typeof order.pant === "object" &&
+        Object.keys(order.pant).length > 0
+      ) {
+        orderedWorkTypes.push("Pant");
+      }
 
-    // Select a previous customer
-    const selectCustomer = (customer) => {
-        setFormData(prev => ({
-            ...prev,
-            name: customer.name,
-            phone: customer.phone || '',
-            email: customer.email || '',
-            shirt: customer.shirt || prev.shirt,
-            pant: customer.pant || prev.pant
-            // Note: Amount fields are NOT auto-filled
-        }));
-        setShowSuggestions(false);
-        setCustomerSuggestions([]);
-    };
+      // Always include Ironing and Embroidery as optional services
+      orderedWorkTypes.push("Ironing", "Embroidery");
 
-    // Filter only civil orders (orders without companyId)
-    const civilOrders = useMemo(() => {
-        // If date-filtered orders are available, use those
-        if (selectedDate && dateFilteredOrders !== null) {
-            return dateFilteredOrders.filter(order => !order.companyId);
-        }
-        // Otherwise use the orders from parent component
-        return orders.filter(order => !order.companyId);
-    }, [orders, selectedDate, dateFilteredOrders]);
+      // Filter to only show work types that are ordered AND not yet assigned
+      const available = orderedWorkTypes.filter(
+        (wt) => !assignedWorkTypes.includes(wt),
+      );
+      setAvailableWorkTypes(available);
+    } catch (error) {
+      console.error("Error fetching assigned work types:", error);
+      // Fallback: show all types if there's an error
+      setAvailableWorkTypes(["Pant", "Shirt", "Ironing", "Embroidery"]);
+    }
+  };
 
-    // Filter orders by time period or specific date
-    const filteredByTime = useMemo(() => {
-        const now = new Date();
-        return civilOrders.filter(order => {
-            // If a specific date is selected, filter by that date
-            if (selectedDate) {
-                const orderDate = new Date(order.date).toISOString().split('T')[0];
-                return orderDate === selectedDate;
-            }
-            
-            if (timePeriod === 'all') return true;
-            const orderDate = new Date(order.date);
-            const diffDays = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24));
-            
-            switch (timePeriod) {
-                case 'today': return diffDays === 0;
-                case 'week': return diffDays <= 7;
-                case 'month': return diffDays <= 30;
-                case 'year': return diffDays <= 365;
-                default: return true;
-            }
-        });
-    }, [civilOrders, timePeriod, selectedDate]);
+  // Open assignment modal
+  const handleOpenAssignModal = async (order) => {
+    setSelectedOrder(order);
+    setAssignmentData({
+      labourId: "",
+      workType: "",
+      quantity: 1,
+      customWage: "",
+    });
+    await fetchAssignedWorkTypes(order);
+    await loadLabourList();
+    setShowAssignModal(true);
+  };
 
-    // Calculate stats
-    const stats = useMemo(() => {
-        const total = filteredByTime.length;
-        const pending = filteredByTime.filter(o => o.status === 'Pending' || o.status === 'In Progress').length;
-        const completed = filteredByTime.filter(o => o.status === 'Delivered' || o.status === 'Completed').length;
-        
-        // Calculate revenue only from delivered orders using actual order amounts
-        const deliveredOrders = filteredByTime.filter(o => o.status === 'Delivered' || o.status === 'Completed');
-        
-        // Calculate revenue from actual order prices
-        const revenue = deliveredOrders.reduce((sum, o) => {
-            const sets = parseInt(o.noOfSets) || 1;
-            const shirtPrice = parseFloat(o.shirtAmount) || 0;
-            const pantPrice = parseFloat(o.pantAmount) || 0;
-            return sum + ((shirtPrice + pantPrice) * sets);
-        }, 0);
+  // Close assignment modal
+  const handleCloseAssignModal = () => {
+    setShowAssignModal(false);
+    setSelectedOrder(null);
+    setAssignmentData({
+      labourId: "",
+      workType: "",
+      quantity: 1,
+      customWage: "",
+    });
+  };
 
-        // Shirt and Pant revenue breakdown using actual prices
-        const shirtRevenue = deliveredOrders.reduce((sum, o) => {
-            const sets = parseInt(o.noOfSets) || 1;
-            const shirtPrice = parseFloat(o.shirtAmount) || 0;
-            return sum + (shirtPrice * sets);
-        }, 0);
-        
-        const pantRevenue = deliveredOrders.reduce((sum, o) => {
-            const sets = parseInt(o.noOfSets) || 1;
-            const pantPrice = parseFloat(o.pantAmount) || 0;
-            return sum + (pantPrice * sets);
-        }, 0);
+  // Submit work assignment
+  const handleSubmitAssignment = async (e) => {
+    e.preventDefault();
 
-        return { total, pending, completed, revenue, shirtRevenue, pantRevenue };
-    }, [filteredByTime]);
+    if (
+      !assignmentData.labourId ||
+      !assignmentData.workType ||
+      !assignmentData.quantity
+    ) {
+      setToast({
+        show: true,
+        message: "Please fill all required fields",
+        type: "error",
+      });
+      return;
+    }
 
-    // Filter orders for display
-    const displayOrders = useMemo(() => {
-        switch (activeFilter) {
-            case 'pending':
-                return filteredByTime.filter(o => o.status === 'Pending' || o.status === 'In Progress');
-            case 'completed':
-                return filteredByTime.filter(o => o.status === 'Delivered' || o.status === 'Completed');
-            default:
-                return filteredByTime;
-        }
-    }, [filteredByTime, activeFilter]);
+    try {
+      setIsSubmitting(true);
+      const selectedLabour = labourList.find(
+        (l) => l._id === assignmentData.labourId,
+      );
 
-    const handleStatusChange = (orderId, newStatus) => {
-        updateOrderStatus(orderId, newStatus);
-    };
+      await workAssignmentsAPI.create({
+        labourId: assignmentData.labourId,
+        orderId: selectedOrder.orderId || selectedOrder._id,
+        workType: assignmentData.workType,
+        quantity: parseInt(assignmentData.quantity),
+        customWage: assignmentData.customWage
+          ? parseFloat(assignmentData.customWage)
+          : null,
+        orderCustomerName: selectedOrder.name,
+        orderDate: selectedOrder.date,
+      });
 
-    const handleCardClick = (type) => {
-        if (type === 'revenue') {
-            setShowRevenueModal(true);
-        } else if (type === 'pending') {
-            setActiveFilter('pending');
-        } else if (type === 'completed') {
-            setActiveFilter('completed');
-        } else {
-            setActiveFilter('all');
-        }
-    };
+      setToast({
+        show: true,
+        message: `Work assigned to ${selectedLabour?.name}`,
+        type: "success",
+      });
+      handleCloseAssignModal();
 
-    const viewMeasurements = (order) => {
-        setSelectedOrder(order);
-        setShowMeasurementsModal(true);
-    };
+      // Refresh the assignment data for this order
+      await fetchAssignedWorkTypes(selectedOrder.orderId || selectedOrder._id);
+    } catch (error) {
+      setToast({
+        show: true,
+        message: error.message || "Failed to assign work",
+        type: "error",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-    // Clear date filter
-    const clearDateFilter = () => {
-        setSelectedDate('');
-        setTimePeriod('all');
-        setDateFilteredOrders(null);
-    };
+  return (
+    <div>
+      {/* Toast Notification */}
+      {toast.show && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast({ ...toast, show: false })}
+        />
+      )}
 
-    // Load labour list for assignment
-    const loadLabourList = async () => {
-        try {
-            setLoadingLabour(true);
-            const labours = await labourAPI.getAll();
-            setLabourList(labours || []);
-        } catch (error) {
-            console.error('Error loading labour list:', error);
-            setToast({ show: true, message: 'Failed to load labour list', type: 'error' });
-        } finally {
-            setLoadingLabour(false);
-        }
-    };
+      {/* Month Refresh Notice */}
+      {monthRefreshNotice && (
+        <div
+          style={{
+            padding: "1rem",
+            marginBottom: "1rem",
+            backgroundColor: "#dcfce7",
+            color: "#166534",
+            borderRadius: "8px",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.75rem",
+            border: "1px solid #86efac",
+          }}
+        >
+          <AlertCircle size={20} />
+          <span>{monthRefreshNotice}</span>
+        </div>
+      )}
 
-    // Fetch already assigned work types for an order
-    const fetchAssignedWorkTypes = async (orderId) => {
-        try {
-            const assignments = await workAssignmentsAPI.getByOrder(orderId);
-            const workTypes = assignments.map(a => a.workType);
-            setAvailableWorkTypes(['Pant', 'Shirt', 'Ironing', 'Embroidery'].filter(wt => !workTypes.includes(wt)));
-        } catch (error) {
-            console.error('Error fetching assigned work types:', error);
-            setAvailableWorkTypes(['Pant', 'Shirt', 'Ironing', 'Embroidery']);
-        }
-    };
+      {/* Time Period Filter */}
+      <div className="card mb-4">
+        <div className="card-body" style={{ padding: "1rem 1.5rem" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "1.5rem",
+              flexWrap: "wrap",
+            }}
+          >
+            {/* Quick Filters */}
+            <div
+              style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+            >
+              <span className="form-label" style={{ marginBottom: 0 }}>
+                Quick Filter:
+              </span>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                {[
+                  { value: "today", label: "Today" },
+                  { value: "week", label: "This Week" },
+                  { value: "month", label: "This Month" },
+                  { value: "year", label: "This Year" },
+                  { value: "all", label: "All Time" },
+                ].map((period) => (
+                  <button
+                    key={period.value}
+                    onClick={() => {
+                      setTimePeriod(period.value);
+                      setSelectedDate(""); // Clear date when quick filter is selected
+                    }}
+                    className={`btn btn-sm ${timePeriod === period.value && !selectedDate ? "btn-primary" : "btn-secondary"}`}
+                  >
+                    {period.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-    // Open assignment modal
-    const handleOpenAssignModal = async (order) => {
-        setSelectedOrder(order);
-        setAssignmentData({ labourId: '', workType: '', quantity: 1, customWage: '' });
-        await fetchAssignedWorkTypes(order.orderId || order._id);
-        await loadLabourList();
-        setShowAssignModal(true);
-    };
+            {/* Divider */}
+            <div
+              style={{
+                width: "1px",
+                height: "30px",
+                backgroundColor: "#e2e8f0",
+              }}
+            ></div>
 
-    // Close assignment modal
-    const handleCloseAssignModal = () => {
-        setShowAssignModal(false);
-        setSelectedOrder(null);
-        setAssignmentData({ labourId: '', workType: '', quantity: 1, customWage: '' });
-    };
+            {/* Date Picker */}
+            <div
+              style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+            >
+              <Calendar size={18} style={{ color: "#64748b" }} />
+              <span className="form-label" style={{ marginBottom: 0 }}>
+                Select Date:
+              </span>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={handleDateChange}
+                className="form-input"
+                style={{ padding: "0.5rem 0.75rem", width: "auto" }}
+              />
+              {selectedDate && (
+                <button
+                  onClick={clearDateFilter}
+                  className="btn btn-sm btn-secondary"
+                  style={{ padding: "0.5rem" }}
+                  title="Clear date filter"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+          </div>
 
-    // Submit work assignment
-    const handleSubmitAssignment = async (e) => {
-        e.preventDefault();
-        
-        if (!assignmentData.labourId || !assignmentData.workType || !assignmentData.quantity) {
-            setToast({ show: true, message: 'Please fill all required fields', type: 'error' });
-            return;
-        }
+          {/* Active Filter Indicator */}
+          {selectedDate && (
+            <div
+              style={{
+                marginTop: "0.75rem",
+                padding: "0.5rem 1rem",
+                backgroundColor: "#eff6ff",
+                borderRadius: "6px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                fontSize: "0.875rem",
+                color: "#1e3a8a",
+              }}
+            >
+              <Calendar size={14} />
+              Showing orders for:{" "}
+              <strong>
+                {new Date(selectedDate).toLocaleDateString("en-US", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </strong>
+            </div>
+          )}
+        </div>
+      </div>
 
-        try {
-            setIsSubmitting(true);
-            const selectedLabour = labourList.find(l => l._id === assignmentData.labourId);
-            
-            await workAssignmentsAPI.create({
-                labourId: assignmentData.labourId,
-                orderId: selectedOrder.orderId || selectedOrder._id,
-                workType: assignmentData.workType,
-                quantity: parseInt(assignmentData.quantity),
-                customWage: assignmentData.customWage ? parseFloat(assignmentData.customWage) : null,
-                orderCustomerName: selectedOrder.name,
-                orderDate: selectedOrder.date
-            });
+      {/* Stats Grid */}
+      <div className="stats-grid">
+        <div
+          className="stat-card"
+          style={{ cursor: "pointer" }}
+          onClick={() => handleCardClick("all")}
+        >
+          <div className="stat-info">
+            <h3>Total Orders</h3>
+            <p className="stat-value">{stats.total}</p>
+          </div>
+          <div className="stat-icon primary">
+            <Users size={24} />
+          </div>
+        </div>
 
-            setToast({ show: true, message: `Work assigned to ${selectedLabour?.name}`, type: 'success' });
-            handleCloseAssignModal();
-            
-            // Refresh the assignment data for this order
-            await fetchAssignedWorkTypes(selectedOrder.orderId || selectedOrder._id);
-        } catch (error) {
-            setToast({ show: true, message: error.message || 'Failed to assign work', type: 'error' });
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
+        <div
+          className="stat-card"
+          style={{
+            cursor: "pointer",
+            border:
+              activeFilter === "pending" ? "2px solid #d97706" : undefined,
+          }}
+          onClick={() => handleCardClick("pending")}
+        >
+          <div className="stat-info">
+            <h3>Pending Orders</h3>
+            <p className="stat-value">{stats.pending}</p>
+          </div>
+          <div className="stat-icon warning">
+            <Clock size={24} />
+          </div>
+        </div>
 
-    return (
-        <div>
-            {/* Toast Notification */}
-            {toast.show && (
-                <Toast
-                    message={toast.message}
-                    type={toast.type}
-                    onClose={() => setToast({ ...toast, show: false })}
-                />
-            )}
+        <div
+          className="stat-card"
+          style={{
+            cursor: "pointer",
+            border:
+              activeFilter === "completed" ? "2px solid #16a34a" : undefined,
+          }}
+          onClick={() => handleCardClick("completed")}
+        >
+          <div className="stat-info">
+            <h3>Completed Orders</h3>
+            <p className="stat-value">{stats.completed}</p>
+          </div>
+          <div className="stat-icon success">
+            <CheckCircle size={24} />
+          </div>
+        </div>
 
-            {/* Month Refresh Notice */}
-            {monthRefreshNotice && (
-                <div style={{
-                    padding: '1rem',
-                    marginBottom: '1rem',
-                    backgroundColor: '#dcfce7',
-                    color: '#166534',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    border: '1px solid #86efac'
-                }}>
-                    <AlertCircle size={20} />
-                    <span>{monthRefreshNotice}</span>
-                </div>
-            )}
-            
-            {/* Time Period Filter */}
-            <div className="card mb-4">
-                <div className="card-body" style={{ padding: '1rem 1.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
-                        {/* Quick Filters */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span className="form-label" style={{ marginBottom: 0 }}>Quick Filter:</span>
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                {[
-                                    { value: 'today', label: 'Today' },
-                                    { value: 'week', label: 'This Week' },
-                                    { value: 'month', label: 'This Month' },
-                                    { value: 'year', label: 'This Year' },
-                                    { value: 'all', label: 'All Time' },
-                                ].map(period => (
-                                    <button
-                                        key={period.value}
-                                        onClick={() => {
-                                            setTimePeriod(period.value);
-                                            setSelectedDate(''); // Clear date when quick filter is selected
-                                        }}
-                                        className={`btn btn-sm ${timePeriod === period.value && !selectedDate ? 'btn-primary' : 'btn-secondary'}`}
-                                    >
-                                        {period.label}
-                                    </button>
-                                ))}
-                            </div>
+        <div
+          className="stat-card"
+          style={{ cursor: "pointer" }}
+          onClick={() => handleCardClick("revenue")}
+        >
+          <div className="stat-info">
+            <h3>Revenue</h3>
+            <p className="stat-value">₹{stats.revenue.toLocaleString()}</p>
+          </div>
+          <div className="stat-icon info">
+            <IndianRupee size={24} />
+          </div>
+        </div>
+      </div>
+
+      {/* Filter indicator */}
+      {activeFilter !== "all" && (
+        <div
+          className="card mb-4"
+          style={{
+            backgroundColor: activeFilter === "pending" ? "#fef3c7" : "#dcfce7",
+          }}
+        >
+          <div
+            className="card-body"
+            style={{
+              padding: "0.75rem 1.5rem",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <span style={{ fontWeight: "500" }}>
+              Showing {activeFilter === "pending" ? "Pending" : "Completed"}{" "}
+              Orders
+            </span>
+            <button
+              className="btn btn-sm btn-secondary"
+              onClick={() => setActiveFilter("all")}
+            >
+              Show All
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Orders Table */}
+      <div className="card">
+        <div className="card-header">
+          <h3 className="card-title">
+            <Users size={20} />
+            Customer Orders
+          </h3>
+          <span className="badge badge-primary">
+            {displayOrders.length} Orders
+          </span>
+        </div>
+        <div className="card-body" style={{ padding: 0 }}>
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Customer Name</th>
+                  <th>No. of Sets</th>
+                  <th>Order Date</th>
+                  <th>Measurements</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan="7">
+                      <div className="empty-state">
+                        <Users size={48} />
+                        <h3>No Orders Found</h3>
+                        <p>No customer orders match the selected filters.</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  displayOrders.map((order) => (
+                    <tr key={order._id || order.id || order.orderId}>
+                      <td className="font-semibold">
+                        #
+                        {order.orderId ||
+                          (order._id || order.id || "").toString().slice(-6)}
+                      </td>
+                      <td>
+                        <div
+                          className="font-semibold"
+                          style={{ color: "var(--text-primary)" }}
+                        >
+                          {order.name}
                         </div>
+                        <div
+                          className="text-muted"
+                          style={{ fontSize: "0.75rem" }}
+                        >
+                          {order.phone || order.phno}
+                        </div>
+                      </td>
+                      <td>{order.noOfSets || 1}</td>
+                      <td>{order.date}</td>
+                      <td>
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => viewMeasurements(order)}
+                          >
+                            <Eye size={14} /> View
+                          </button>
+                          <button
+                            className="btn btn-sm"
+                            style={{
+                              backgroundColor:
+                                availableWorkTypes.length === 0
+                                  ? "#10b981"
+                                  : "#3b82f6",
+                              color: "white",
+                              border: "none",
+                              cursor:
+                                availableWorkTypes.length === 0
+                                  ? "not-allowed"
+                                  : "pointer",
+                              opacity:
+                                availableWorkTypes.length === 0 ? 0.7 : 1,
+                            }}
+                            onClick={() => handleOpenAssignModal(order)}
+                            disabled={availableWorkTypes.length === 0}
+                          >
+                            {availableWorkTypes.length === 0
+                              ? "✓ Assigned"
+                              : "Assign"}
+                          </button>
+                        </div>
+                      </td>
+                      <td>
+                        <span
+                          className={`badge ${
+                            order.status === "Delivered" ||
+                            order.status === "Completed"
+                              ? "badge-success"
+                              : order.status === "In Progress"
+                                ? "badge-info"
+                                : "badge-warning"
+                          }`}
+                        >
+                          {order.status}
+                        </span>
+                      </td>
+                      <td>
+                        <select
+                          value={order.status}
+                          onChange={(e) =>
+                            handleStatusChange(
+                              order._id || order.id,
+                              e.target.value,
+                            )
+                          }
+                          className="form-input"
+                          style={{ padding: "0.5rem", minWidth: "130px" }}
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="In Progress">In Progress</option>
+                          <option value="Completed">Completed</option>
+                          <option value="Delivered">Delivered</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
-                        {/* Divider */}
-                        <div style={{ width: '1px', height: '30px', backgroundColor: '#e2e8f0' }}></div>
+      {/* Revenue Modal with Pie Chart */}
+      {showRevenueModal && (
+        <div
+          className="modal-overlay"
+          onClick={() => setShowRevenueModal(false)}
+        >
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Revenue Analysis</h3>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={() => setShowRevenueModal(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  gap: "3rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                {/* Simple Pie Chart using CSS */}
+                <div
+                  style={{
+                    position: "relative",
+                    width: "200px",
+                    height: "200px",
+                  }}
+                >
+                  <svg
+                    viewBox="0 0 100 100"
+                    style={{ transform: "rotate(-90deg)" }}
+                  >
+                    {stats.revenue > 0 ? (
+                      <>
+                        <circle
+                          cx="50"
+                          cy="50"
+                          r="40"
+                          fill="transparent"
+                          stroke="#1e3a8a"
+                          strokeWidth="20"
+                          strokeDasharray={`${(stats.shirtRevenue / stats.revenue) * 251.2} 251.2`}
+                        />
+                        <circle
+                          cx="50"
+                          cy="50"
+                          r="40"
+                          fill="transparent"
+                          stroke="#60a5fa"
+                          strokeWidth="20"
+                          strokeDasharray={`${(stats.pantRevenue / stats.revenue) * 251.2} 251.2`}
+                          strokeDashoffset={`-${(stats.shirtRevenue / stats.revenue) * 251.2}`}
+                        />
+                      </>
+                    ) : (
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="40"
+                        fill="transparent"
+                        stroke="#e2e8f0"
+                        strokeWidth="20"
+                      />
+                    )}
+                  </svg>
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "50%",
+                      left: "50%",
+                      transform: "translate(-50%, -50%)",
+                      textAlign: "center",
+                    }}
+                  >
+                    <div style={{ fontSize: "1.25rem", fontWeight: "bold" }}>
+                      ₹{stats.revenue.toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      Total
+                    </div>
+                  </div>
+                </div>
 
-                        {/* Date Picker */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <Calendar size={18} style={{ color: '#64748b' }} />
-                            <span className="form-label" style={{ marginBottom: 0 }}>Select Date:</span>
-                            <input
-                                type="date"
-                                value={selectedDate}
-                                onChange={handleDateChange}
-                                className="form-input"
-                                style={{ padding: '0.5rem 0.75rem', width: 'auto' }}
+                {/* Legend */}
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "1rem",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "1rem",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                      }}
+                    >
+                      <Shirt size={20} style={{ color: "#1e3a8a" }} />
+                      <div
+                        style={{
+                          width: "20px",
+                          height: "20px",
+                          backgroundColor: "#1e3a8a",
+                          borderRadius: "4px",
+                        }}
+                      ></div>
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: "600" }}>Shirts</div>
+                      <div style={{ color: "#64748b" }}>
+                        ₹{stats.shirtRevenue.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "1rem",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                      }}
+                    >
+                      <PanelBottom size={20} style={{ color: "#60a5fa" }} />
+                      <div
+                        style={{
+                          width: "20px",
+                          height: "20px",
+                          backgroundColor: "#60a5fa",
+                          borderRadius: "4px",
+                        }}
+                      ></div>
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: "600" }}>Pants</div>
+                      <div style={{ color: "#64748b" }}>
+                        ₹{stats.pantRevenue.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Measurements Modal */}
+      {showMeasurementsModal && selectedOrder && (
+        <div
+          className="modal-overlay"
+          onClick={() => setShowMeasurementsModal(false)}
+        >
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "600px" }}
+          >
+            <div className="modal-header">
+              <h3>Measurements - {selectedOrder.name}</h3>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={() => setShowMeasurementsModal(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "2rem",
+                }}
+              >
+                {/* Shirt Measurements */}
+                <div>
+                  <h4 className="form-section-title">
+                    <Shirt size={18} style={{ marginRight: "0.5rem" }} />
+                    Shirt
+                  </h4>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    {selectedOrder.shirt &&
+                      Object.entries(selectedOrder.shirt).map(
+                        ([key, value]) => (
+                          <div
+                            key={key}
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              padding: "0.5rem",
+                              backgroundColor: "#f8fafc",
+                              borderRadius: "4px",
+                            }}
+                          >
+                            <span
+                              style={{
+                                textTransform: "capitalize",
+                                color: "#64748b",
+                              }}
+                            >
+                              {key}
+                            </span>
+                            <span style={{ fontWeight: "600" }}>
+                              {value || "-"}
+                            </span>
+                          </div>
+                        ),
+                      )}
+                  </div>
+                </div>
+
+                {/* Pant Measurements */}
+                <div>
+                  <h4 className="form-section-title">
+                    <PanelBottom size={18} style={{ marginRight: "0.5rem" }} />
+                    Pant
+                  </h4>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    {selectedOrder.pant &&
+                      Object.entries(selectedOrder.pant).map(([key, value]) => (
+                        <div
+                          key={key}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            padding: "0.5rem",
+                            backgroundColor: "#f8fafc",
+                            borderRadius: "4px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              textTransform: "capitalize",
+                              color: "#64748b",
+                            }}
+                          >
+                            {key === "butt" ? "Seat" : key}
+                          </span>
+                          <span style={{ fontWeight: "600" }}>
+                            {value || "-"}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Order Modal */}
+      {showCreateModal && (
+        <div className="modal-overlay" onClick={handleCloseCreateModal}>
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "900px", maxHeight: "90vh", overflow: "auto" }}
+          >
+            <div className="modal-header">
+              <h3
+                style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+              >
+                <Plus size={20} />
+                Create New Order
+              </h3>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={handleCloseCreateModal}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitOrder}>
+              <div className="modal-body">
+                {formError && (
+                  <div
+                    style={{
+                      padding: "1rem",
+                      backgroundColor: "#fee2e2",
+                      color: "#dc2626",
+                      borderRadius: "8px",
+                      marginBottom: "1rem",
+                      fontSize: "0.875rem",
+                    }}
+                  >
+                    {formError}
+                  </div>
+                )}
+
+                {/* Step Indicator */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginBottom: "2rem",
+                    gap: "1rem",
+                  }}
+                >
+                  {[
+                    { step: 1, label: "Services" },
+                    { step: 2, label: "Measurements" },
+                    { step: 3, label: "Payment" },
+                  ].map((item) => (
+                    <div
+                      key={item.step}
+                      style={{
+                        flex: 1,
+                        textAlign: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "40px",
+                          height: "40px",
+                          margin: "0 auto 0.5rem",
+                          borderRadius: "50%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontWeight: "600",
+                          color: "white",
+                          backgroundColor:
+                            orderStep >= item.step ? "#3b82f6" : "#cbd5e1",
+                          transition: "all 0.3s ease",
+                        }}
+                      >
+                        {orderStep > item.step ? "✓" : item.step}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "0.875rem",
+                          color: orderStep >= item.step ? "#1e3a8a" : "#64748b",
+                          fontWeight: orderStep === item.step ? "600" : "400",
+                        }}
+                      >
+                        {item.label}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* STEP 1: Services Selection */}
+                {orderStep === 1 && (
+                  <div>
+                    <h4
+                      style={{
+                        marginBottom: "1.5rem",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                        fontSize: "1.1rem",
+                        fontWeight: "600",
+                      }}
+                    >
+                      <ShoppingCart size={20} />
+                      What services does the customer need?
+                    </h4>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: "1.5rem",
+                      }}
+                    >
+                      {/* Shirt Checkbox */}
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          padding: "1.25rem",
+                          border: selectedServices.shirt
+                            ? "2px solid #3b82f6"
+                            : "2px solid #e2e8f0",
+                          borderRadius: "12px",
+                          cursor: "pointer",
+                          transition: "all 0.2s",
+                          backgroundColor: selectedServices.shirt
+                            ? "#eff6ff"
+                            : "#f8fafc",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = "#3b82f6";
+                          e.currentTarget.style.backgroundColor = "#eff6ff";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor =
+                            selectedServices.shirt ? "#3b82f6" : "#e2e8f0";
+                          e.currentTarget.style.backgroundColor =
+                            selectedServices.shirt ? "#eff6ff" : "#f8fafc";
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedServices.shirt}
+                          onChange={(e) =>
+                            setSelectedServices((prev) => ({
+                              ...prev,
+                              shirt: e.target.checked,
+                            }))
+                          }
+                          style={{
+                            width: "20px",
+                            height: "20px",
+                            cursor: "pointer",
+                            marginRight: "1rem",
+                          }}
+                        />
+                        <div>
+                          <div
+                            style={{
+                              fontWeight: "600",
+                              color: "#1e3a8a",
+                              fontSize: "1rem",
+                            }}
+                          >
+                            <Shirt
+                              size={18}
+                              style={{
+                                display: "inline",
+                                marginRight: "0.5rem",
+                              }}
                             />
-                            {selectedDate && (
-                                <button
-                                    onClick={clearDateFilter}
-                                    className="btn btn-sm btn-secondary"
-                                    style={{ padding: '0.5rem' }}
-                                    title="Clear date filter"
+                            Shirt
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "0.75rem",
+                              color: "#64748b",
+                              marginTop: "0.25rem",
+                            }}
+                          >
+                            Length, shoulder, sleeve, chest, collar, waist
+                          </div>
+                        </div>
+                      </label>
+
+                      {/* Pant Checkbox */}
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          padding: "1.25rem",
+                          border: selectedServices.pant
+                            ? "2px solid #3b82f6"
+                            : "2px solid #e2e8f0",
+                          borderRadius: "12px",
+                          cursor: "pointer",
+                          transition: "all 0.2s",
+                          backgroundColor: selectedServices.pant
+                            ? "#eff6ff"
+                            : "#f8fafc",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = "#3b82f6";
+                          e.currentTarget.style.backgroundColor = "#eff6ff";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor =
+                            selectedServices.pant ? "#3b82f6" : "#e2e8f0";
+                          e.currentTarget.style.backgroundColor =
+                            selectedServices.pant ? "#eff6ff" : "#f8fafc";
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedServices.pant}
+                          onChange={(e) =>
+                            setSelectedServices((prev) => ({
+                              ...prev,
+                              pant: e.target.checked,
+                            }))
+                          }
+                          style={{
+                            width: "20px",
+                            height: "20px",
+                            cursor: "pointer",
+                            marginRight: "1rem",
+                          }}
+                        />
+                        <div>
+                          <div
+                            style={{
+                              fontWeight: "600",
+                              color: "#1e3a8a",
+                              fontSize: "1rem",
+                            }}
+                          >
+                            <PanelBottom
+                              size={18}
+                              style={{
+                                display: "inline",
+                                marginRight: "0.5rem",
+                              }}
+                            />
+                            Pant
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "0.75rem",
+                              color: "#64748b",
+                              marginTop: "0.25rem",
+                            }}
+                          >
+                            Length, waist, hip, thigh, knee, bottom
+                          </div>
+                        </div>
+                      </label>
+
+                      {/* Embroidery Checkbox */}
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          padding: "1.25rem",
+                          border: selectedServices.embroidery
+                            ? "2px solid #3b82f6"
+                            : "2px solid #e2e8f0",
+                          borderRadius: "12px",
+                          cursor: "pointer",
+                          transition: "all 0.2s",
+                          backgroundColor: selectedServices.embroidery
+                            ? "#eff6ff"
+                            : "#f8fafc",
+                          gridColumn: "span 2",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = "#3b82f6";
+                          e.currentTarget.style.backgroundColor = "#eff6ff";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor =
+                            selectedServices.embroidery ? "#3b82f6" : "#e2e8f0";
+                          e.currentTarget.style.backgroundColor =
+                            selectedServices.embroidery ? "#eff6ff" : "#f8fafc";
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedServices.embroidery}
+                          onChange={(e) => {
+                            setSelectedServices((prev) => ({
+                              ...prev,
+                              embroidery: e.target.checked,
+                            }));
+                            if (!e.target.checked) {
+                              setEmbroideryText("");
+                            }
+                          }}
+                          style={{
+                            width: "20px",
+                            height: "20px",
+                            cursor: "pointer",
+                            marginRight: "1rem",
+                          }}
+                        />
+                        <div>
+                          <div
+                            style={{
+                              fontWeight: "600",
+                              color: "#1e3a8a",
+                              fontSize: "1rem",
+                            }}
+                          >
+                            <Sparkles
+                              size={18}
+                              style={{
+                                display: "inline",
+                                marginRight: "0.5rem",
+                              }}
+                            />
+                            Embroidery
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "0.75rem",
+                              color: "#64748b",
+                              marginTop: "0.25rem",
+                            }}
+                          >
+                            Add text or design embroidery on the garment
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 2: Measurements */}
+                {orderStep === 2 && (
+                  <div>
+                    <h4
+                      style={{
+                        marginBottom: "1.5rem",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                        fontSize: "1.1rem",
+                        fontWeight: "600",
+                      }}
+                    >
+                      <Ruler size={20} />
+                      Enter Measurements (in inches)
+                    </h4>
+
+                    {/* Customer Details for Step 2 */}
+                    <div style={{ marginBottom: "2rem" }}>
+                      <h5 style={{ marginBottom: "1rem", color: "#475569" }}>
+                        Customer Information
+                      </h5>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(2, 1fr)",
+                          gap: "1rem",
+                        }}
+                      >
+                        <div className="form-group">
+                          <label className="form-label">Order ID</label>
+                          <div
+                            style={{
+                              padding: "0.75rem 1rem",
+                              backgroundColor: "#f1f5f9",
+                              borderRadius: "8px",
+                              border: "1px solid #e2e8f0",
+                              color: "#1e3a8a",
+                              fontWeight: "600",
+                            }}
+                          >
+                            {formData.orderId || "Auto"}
+                          </div>
+                        </div>
+                        <div
+                          className="form-group"
+                          style={{ position: "relative" }}
+                        >
+                          <label className="form-label">Customer Name *</label>
+                          <input
+                            type="text"
+                            name="name"
+                            value={formData.name}
+                            onChange={handleNameChange}
+                            onFocus={() =>
+                              formData.name.length >= 2 &&
+                              customerSuggestions.length > 0 &&
+                              setShowSuggestions(true)
+                            }
+                            onBlur={() =>
+                              setTimeout(() => setShowSuggestions(false), 300)
+                            }
+                            className="form-input"
+                            placeholder="Enter customer name"
+                            autoComplete="off"
+                            required
+                          />
+                          {searchingCustomers && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                right: "10px",
+                                top: "38px",
+                                fontSize: "0.75rem",
+                                color: "#64748b",
+                              }}
+                            >
+                              Searching...
+                            </div>
+                          )}
+                          {showSuggestions &&
+                            customerSuggestions.length > 0 && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "100%",
+                                  left: 0,
+                                  right: 0,
+                                  backgroundColor: "white",
+                                  border: "1px solid #e2e8f0",
+                                  borderRadius: "8px",
+                                  boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                                  zIndex: 100,
+                                  maxHeight: "200px",
+                                  overflow: "auto",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    padding: "0.5rem 0.75rem",
+                                    fontSize: "0.75rem",
+                                    color: "#64748b",
+                                    borderBottom: "1px solid #e2e8f0",
+                                    backgroundColor: "#f8fafc",
+                                  }}
                                 >
-                                    <X size={16} />
-                                </button>
+                                  Previous Customers
+                                </div>
+                                {customerSuggestions.map((customer, index) => (
+                                  <div
+                                    key={index}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      selectCustomer(customer);
+                                    }}
+                                    style={{
+                                      padding: "0.75rem",
+                                      cursor: "pointer",
+                                      borderBottom:
+                                        index < customerSuggestions.length - 1
+                                          ? "1px solid #f1f5f9"
+                                          : "none",
+                                      transition: "background-color 0.2s",
+                                      backgroundColor: "white",
+                                    }}
+                                    onMouseEnter={(e) =>
+                                      (e.currentTarget.style.backgroundColor =
+                                        "#eff6ff")
+                                    }
+                                    onMouseLeave={(e) =>
+                                      (e.currentTarget.style.backgroundColor =
+                                        "white")
+                                    }
+                                  >
+                                    <div
+                                      style={{
+                                        fontWeight: "600",
+                                        color: "#1e3a8a",
+                                        pointerEvents: "none",
+                                      }}
+                                    >
+                                      {customer.name}
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: "0.75rem",
+                                        color: "#64748b",
+                                        pointerEvents: "none",
+                                      }}
+                                    >
+                                      {customer.phone}{" "}
+                                      {customer.email && `• ${customer.email}`}
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: "0.7rem",
+                                        color: "#94a3b8",
+                                        marginTop: "2px",
+                                        pointerEvents: "none",
+                                      }}
+                                    >
+                                      Last order: {customer.lastOrderDate}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
                             )}
                         </div>
+                        <div className="form-group">
+                          <label className="form-label">Phone Number *</label>
+                          <input
+                            type="tel"
+                            name="phone"
+                            value={formData.phone}
+                            onChange={handleInputChange}
+                            className="form-input"
+                            placeholder="Enter phone number"
+                            required
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Email</label>
+                          <input
+                            type="email"
+                            name="email"
+                            value={formData.email}
+                            onChange={handleInputChange}
+                            className="form-input"
+                            placeholder="Enter email address"
+                          />
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Active Filter Indicator */}
-                    {selectedDate && (
-                        <div style={{ 
-                            marginTop: '0.75rem', 
-                            padding: '0.5rem 1rem', 
-                            backgroundColor: '#eff6ff', 
-                            borderRadius: '6px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
-                            fontSize: '0.875rem',
-                            color: '#1e3a8a'
-                        }}>
-                            <Calendar size={14} />
-                            Showing orders for: <strong>{new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</strong>
+                    {/* Shirt Measurements */}
+                    {selectedServices.shirt && (
+                      <div style={{ marginBottom: "2rem" }}>
+                        <h5
+                          style={{
+                            marginBottom: "1rem",
+                            color: "#475569",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.5rem",
+                          }}
+                        >
+                          <Shirt size={16} />
+                          Shirt Measurements
+                        </h5>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(3, 1fr)",
+                            gap: "1rem",
+                          }}
+                        >
+                          {[
+                            "length",
+                            "shoulder",
+                            "sleeve",
+                            "chest",
+                            "collar",
+                            "waist",
+                          ].map((field) => (
+                            <div className="form-group" key={field}>
+                              <label
+                                className="form-label"
+                                style={{
+                                  textTransform: "capitalize",
+                                  fontSize: "0.8rem",
+                                }}
+                              >
+                                {field}
+                              </label>
+                              <input
+                                type="number"
+                                step="0.5"
+                                name={field}
+                                value={formData.shirt[field]}
+                                onChange={handleShirtChange}
+                                className="form-input"
+                                placeholder="0"
+                              />
+                            </div>
+                          ))}
                         </div>
+                      </div>
                     )}
-                </div>
-            </div>
 
-            {/* Stats Grid */}
-            <div className="stats-grid">
-                <div 
-                    className="stat-card" 
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => handleCardClick('all')}
-                >
-                    <div className="stat-info">
-                        <h3>Total Orders</h3>
-                        <p className="stat-value">{stats.total}</p>
-                    </div>
-                    <div className="stat-icon primary">
-                        <Users size={24} />
-                    </div>
-                </div>
-
-                <div 
-                    className="stat-card" 
-                    style={{ cursor: 'pointer', border: activeFilter === 'pending' ? '2px solid #d97706' : undefined }}
-                    onClick={() => handleCardClick('pending')}
-                >
-                    <div className="stat-info">
-                        <h3>Pending Orders</h3>
-                        <p className="stat-value">{stats.pending}</p>
-                    </div>
-                    <div className="stat-icon warning">
-                        <Clock size={24} />
-                    </div>
-                </div>
-
-                <div 
-                    className="stat-card" 
-                    style={{ cursor: 'pointer', border: activeFilter === 'completed' ? '2px solid #16a34a' : undefined }}
-                    onClick={() => handleCardClick('completed')}
-                >
-                    <div className="stat-info">
-                        <h3>Completed Orders</h3>
-                        <p className="stat-value">{stats.completed}</p>
-                    </div>
-                    <div className="stat-icon success">
-                        <CheckCircle size={24} />
-                    </div>
-                </div>
-
-                <div 
-                    className="stat-card" 
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => handleCardClick('revenue')}
-                >
-                    <div className="stat-info">
-                        <h3>Revenue</h3>
-                        <p className="stat-value">₹{stats.revenue.toLocaleString()}</p>
-                    </div>
-                    <div className="stat-icon info">
-                        <IndianRupee size={24} />
-                    </div>
-                </div>
-            </div>
-
-            {/* Filter indicator */}
-            {activeFilter !== 'all' && (
-                <div className="card mb-4" style={{ backgroundColor: activeFilter === 'pending' ? '#fef3c7' : '#dcfce7' }}>
-                    <div className="card-body" style={{ padding: '0.75rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontWeight: '500' }}>
-                            Showing {activeFilter === 'pending' ? 'Pending' : 'Completed'} Orders
-                        </span>
-                        <button className="btn btn-sm btn-secondary" onClick={() => setActiveFilter('all')}>
-                            Show All
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Orders Table */}
-            <div className="card">
-                <div className="card-header">
-                    <h3 className="card-title">
-                        <Users size={20} />
-                        Customer Orders
-                    </h3>
-                    <span className="badge badge-primary">{displayOrders.length} Orders</span>
-                </div>
-                <div className="card-body" style={{ padding: 0 }}>
-                    <div className="table-container">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Order ID</th>
-                                    <th>Customer Name</th>
-                                    <th>No. of Sets</th>
-                                    <th>Order Date</th>
-                                    <th>Measurements</th>
-                                    <th>Status</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {displayOrders.length === 0 ? (
-                                    <tr>
-                                        <td colSpan="7">
-                                            <div className="empty-state">
-                                                <Users size={48} />
-                                                <h3>No Orders Found</h3>
-                                                <p>No customer orders match the selected filters.</p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    displayOrders.map(order => (
-                                        <tr key={order._id || order.id || order.orderId}>
-                                            <td className="font-semibold">#{order.orderId || (order._id || order.id || '').toString().slice(-6)}</td>
-                                            <td>
-                                                <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                                                    {order.name}
-                                                </div>
-                                                <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                                    {order.phone || order.phno}
-                                                </div>
-                                            </td>
-                                            <td>{order.noOfSets || 1}</td>
-                                            <td>{order.date}</td>
-                                            <td>
-                                                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                                    <button 
-                                                        className="btn btn-sm btn-secondary"
-                                                        onClick={() => viewMeasurements(order)}
-                                                    >
-                                                        <Eye size={14} /> View
-                                                    </button>
-                                                    <button 
-                                                        className="btn btn-sm"
-                                                        style={{
-                                                            backgroundColor: availableWorkTypes.length === 0 ? '#10b981' : '#3b82f6',
-                                                            color: 'white',
-                                                            border: 'none',
-                                                            cursor: availableWorkTypes.length === 0 ? 'not-allowed' : 'pointer',
-                                                            opacity: availableWorkTypes.length === 0 ? 0.7 : 1
-                                                        }}
-                                                        onClick={() => handleOpenAssignModal(order)}
-                                                        disabled={availableWorkTypes.length === 0}
-                                                    >
-                                                        {availableWorkTypes.length === 0 ? '✓ Assigned' : 'Assign'}
-                                                    </button>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span className={`badge ${
-                                                    order.status === 'Delivered' || order.status === 'Completed' ? 'badge-success' :
-                                                    order.status === 'In Progress' ? 'badge-info' :
-                                                    'badge-warning'
-                                                }`}>
-                                                    {order.status}
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <select
-                                                    value={order.status}
-                                                    onChange={(e) => handleStatusChange(order._id || order.id, e.target.value)}
-                                                    className="form-input"
-                                                    style={{ padding: '0.5rem', minWidth: '130px' }}
-                                                >
-                                                    <option value="Pending">Pending</option>
-                                                    <option value="In Progress">In Progress</option>
-                                                    <option value="Completed">Completed</option>
-                                                    <option value="Delivered">Delivered</option>
-                                                </select>
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            {/* Revenue Modal with Pie Chart */}
-            {showRevenueModal && (
-                <div className="modal-overlay" onClick={() => setShowRevenueModal(false)}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3>Revenue Analysis</h3>
-                            <button className="btn btn-sm btn-secondary" onClick={() => setShowRevenueModal(false)}>
-                                <X size={18} />
-                            </button>
-                        </div>
-                        <div className="modal-body">
-                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '3rem', flexWrap: 'wrap' }}>
-                                {/* Simple Pie Chart using CSS */}
-                                <div style={{ position: 'relative', width: '200px', height: '200px' }}>
-                                    <svg viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)' }}>
-                                        {stats.revenue > 0 ? (
-                                            <>
-                                                <circle
-                                                    cx="50"
-                                                    cy="50"
-                                                    r="40"
-                                                    fill="transparent"
-                                                    stroke="#1e3a8a"
-                                                    strokeWidth="20"
-                                                    strokeDasharray={`${(stats.shirtRevenue / stats.revenue) * 251.2} 251.2`}
-                                                />
-                                                <circle
-                                                    cx="50"
-                                                    cy="50"
-                                                    r="40"
-                                                    fill="transparent"
-                                                    stroke="#60a5fa"
-                                                    strokeWidth="20"
-                                                    strokeDasharray={`${(stats.pantRevenue / stats.revenue) * 251.2} 251.2`}
-                                                    strokeDashoffset={`-${(stats.shirtRevenue / stats.revenue) * 251.2}`}
-                                                />
-                                            </>
-                                        ) : (
-                                            <circle
-                                                cx="50"
-                                                cy="50"
-                                                r="40"
-                                                fill="transparent"
-                                                stroke="#e2e8f0"
-                                                strokeWidth="20"
-                                            />
-                                        )}
-                                    </svg>
-                                    <div style={{ 
-                                        position: 'absolute', 
-                                        top: '50%', 
-                                        left: '50%', 
-                                        transform: 'translate(-50%, -50%)',
-                                        textAlign: 'center'
-                                    }}>
-                                        <div style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>₹{stats.revenue.toLocaleString()}</div>
-                                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Total</div>
-                                    </div>
-                                </div>
-
-                                {/* Legend */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <Shirt size={20} style={{ color: '#1e3a8a' }} />
-                                            <div style={{ width: '20px', height: '20px', backgroundColor: '#1e3a8a', borderRadius: '4px' }}></div>
-                                        </div>
-                                        <div>
-                                            <div style={{ fontWeight: '600' }}>Shirts</div>
-                                            <div style={{ color: '#64748b' }}>₹{stats.shirtRevenue.toLocaleString()}</div>
-                                        </div>
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <PanelBottom size={20} style={{ color: '#60a5fa' }} />
-                                            <div style={{ width: '20px', height: '20px', backgroundColor: '#60a5fa', borderRadius: '4px' }}></div>
-                                        </div>
-                                        <div>
-                                            <div style={{ fontWeight: '600' }}>Pants</div>
-                                            <div style={{ color: '#64748b' }}>₹{stats.pantRevenue.toLocaleString()}</div>
-                                        </div>
-                                    </div>
-                                </div>
+                    {/* Pant Measurements */}
+                    {selectedServices.pant && (
+                      <div style={{ marginBottom: "2rem" }}>
+                        <h5
+                          style={{
+                            marginBottom: "1rem",
+                            color: "#475569",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.5rem",
+                          }}
+                        >
+                          <PanelBottom size={16} />
+                          Pant Measurements
+                        </h5>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(3, 1fr)",
+                            gap: "1rem",
+                          }}
+                        >
+                          {[
+                            "length",
+                            "waist",
+                            "hip",
+                            "thigh",
+                            "knee",
+                            "bottom",
+                          ].map((field) => (
+                            <div className="form-group" key={field}>
+                              <label
+                                className="form-label"
+                                style={{
+                                  textTransform: "capitalize",
+                                  fontSize: "0.8rem",
+                                }}
+                              >
+                                {field}
+                              </label>
+                              <input
+                                type="number"
+                                step="0.5"
+                                name={field}
+                                value={formData.pant[field]}
+                                onChange={handlePantChange}
+                                className="form-input"
+                                placeholder="0"
+                              />
                             </div>
+                          ))}
                         </div>
-                    </div>
-                </div>
-            )}
+                      </div>
+                    )}
 
-            {/* Measurements Modal */}
-            {showMeasurementsModal && selectedOrder && (
-                <div className="modal-overlay" onClick={() => setShowMeasurementsModal(false)}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-                        <div className="modal-header">
-                            <h3>Measurements - {selectedOrder.name}</h3>
-                            <button className="btn btn-sm btn-secondary" onClick={() => setShowMeasurementsModal(false)}>
-                                <X size={18} />
-                            </button>
+                    {/* Embroidery Text */}
+                    {selectedServices.embroidery && (
+                      <div>
+                        <h5
+                          style={{
+                            marginBottom: "1rem",
+                            color: "#475569",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.5rem",
+                          }}
+                        >
+                          <Sparkles size={16} />
+                          Embroidery Design
+                        </h5>
+                        <div className="form-group">
+                          <label className="form-label">What to Print? *</label>
+                          <textarea
+                            value={embroideryText}
+                            onChange={(e) => setEmbroideryText(e.target.value)}
+                            className="form-input"
+                            placeholder="Enter text or describe the design to embroider"
+                            rows="3"
+                            style={{
+                              resize: "vertical",
+                              fontFamily: "inherit",
+                            }}
+                          />
+                          <small
+                            style={{
+                              color: "#64748b",
+                              marginTop: "0.25rem",
+                              display: "block",
+                            }}
+                          >
+                            E.g., "John's initials", "Company logo with name",
+                            etc.
+                          </small>
                         </div>
-                        <div className="modal-body">
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-                                {/* Shirt Measurements */}
-                                <div>
-                                    <h4 className="form-section-title">
-                                        <Shirt size={18} style={{ marginRight: '0.5rem' }} />
-                                        Shirt
-                                    </h4>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                        {selectedOrder.shirt && Object.entries(selectedOrder.shirt).map(([key, value]) => (
-                                            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem', backgroundColor: '#f8fafc', borderRadius: '4px' }}>
-                                                <span style={{ textTransform: 'capitalize', color: '#64748b' }}>{key}</span>
-                                                <span style={{ fontWeight: '600' }}>{value || '-'}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                                {/* Pant Measurements */}
-                                <div>
-                                    <h4 className="form-section-title">
-                                        <PanelBottom size={18} style={{ marginRight: '0.5rem' }} />
-                                        Pant
-                                    </h4>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                        {selectedOrder.pant && Object.entries(selectedOrder.pant).map(([key, value]) => (
-                                            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem', backgroundColor: '#f8fafc', borderRadius: '4px' }}>
-                                                <span style={{ textTransform: 'capitalize', color: '#64748b' }}>{key === 'butt' ? 'Seat' : key}</span>
-                                                <span style={{ fontWeight: '600' }}>{value || '-'}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Create Order Modal */}
-            {showCreateModal && (
-                <div className="modal-overlay" onClick={handleCloseCreateModal}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }}>
-                        <div className="modal-header">
-                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <Plus size={20} />
-                                Create New Order
-                            </h3>
-                            <button className="btn btn-sm btn-secondary" onClick={handleCloseCreateModal}>
-                                <X size={18} />
-                            </button>
-                        </div>
-                        <form onSubmit={handleSubmitOrder}>
-                            <div className="modal-body">
-                                {formError && (
-                                    <div style={{ 
-                                        padding: '1rem', 
-                                        backgroundColor: '#fee2e2', 
-                                        color: '#dc2626', 
-                                        borderRadius: '8px', 
-                                        marginBottom: '1rem',
-                                        fontSize: '0.875rem'
-                                    }}>
-                                        {formError}
-                                    </div>
-                                )}
-
-                                {/* Customer Details Section */}
-                                <div style={{ marginBottom: '2rem' }}>
-                                    <h4 className="form-section-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                                        <Users size={18} />
-                                        Customer Details
-                                    </h4>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
-                                        <div className="form-group">
-                                            <label className="form-label">Order ID</label>
-                                            <div
-                                                style={{
-                                                    padding: '0.75rem 1rem',
-                                                    backgroundColor: '#f1f5f9',
-                                                    borderRadius: '8px',
-                                                    border: '1px solid #e2e8f0',
-                                                    color: '#1e3a8a',
-                                                    fontWeight: '600',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'space-between'
-                                                }}
-                                            >
-                                                <span>{formData.orderId || 'Auto'}</span>
-                                            </div>
-                                        </div>
-                                        <div className="form-group" style={{ position: 'relative' }}>
-                                            <label className="form-label">Customer Name *</label>
-                                            <input
-                                                type="text"
-                                                name="name"
-                                                value={formData.name}
-                                                onChange={handleNameChange}
-                                                onFocus={() => formData.name.length >= 2 && customerSuggestions.length > 0 && setShowSuggestions(true)}
-                                                onBlur={() => setTimeout(() => setShowSuggestions(false), 300)}
-                                                className="form-input"
-                                                placeholder="Enter customer name"
-                                                autoComplete="off"
-                                                required
-                                            />
-                                            {searchingCustomers && (
-                                                <div style={{ 
-                                                    position: 'absolute', 
-                                                    right: '10px', 
-                                                    top: '38px',
-                                                    fontSize: '0.75rem',
-                                                    color: '#64748b'
-                                                }}>
-                                                    Searching...
-                                                </div>
-                                            )}
-                                            {showSuggestions && customerSuggestions.length > 0 && (
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    top: '100%',
-                                                    left: 0,
-                                                    right: 0,
-                                                    backgroundColor: 'white',
-                                                    border: '1px solid #e2e8f0',
-                                                    borderRadius: '8px',
-                                                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                                                    zIndex: 100,
-                                                    maxHeight: '200px',
-                                                    overflow: 'auto'
-                                                }}>
-                                                    <div style={{ 
-                                                        padding: '0.5rem 0.75rem', 
-                                                        fontSize: '0.75rem', 
-                                                        color: '#64748b',
-                                                        borderBottom: '1px solid #e2e8f0',
-                                                        backgroundColor: '#f8fafc'
-                                                    }}>
-                                                        Previous Customers
-                                                    </div>
-                                                    {customerSuggestions.map((customer, index) => (
-                                                        <div
-                                                            key={index}
-                                                            onMouseDown={(e) => {
-                                                                e.preventDefault();
-                                                                selectCustomer(customer);
-                                                            }}
-                                                            style={{
-                                                                padding: '0.75rem',
-                                                                cursor: 'pointer',
-                                                                borderBottom: index < customerSuggestions.length - 1 ? '1px solid #f1f5f9' : 'none',
-                                                                transition: 'background-color 0.2s',
-                                                                backgroundColor: 'white'
-                                                            }}
-                                                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#eff6ff'}
-                                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'white'}
-                                                        >
-                                                            <div style={{ fontWeight: '600', color: '#1e3a8a', pointerEvents: 'none' }}>{customer.name}</div>
-                                                            <div style={{ fontSize: '0.75rem', color: '#64748b', pointerEvents: 'none' }}>
-                                                                {customer.phone} {customer.email && `• ${customer.email}`}
-                                                            </div>
-                                                            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px', pointerEvents: 'none' }}>
-                                                                Last order: {customer.lastOrderDate}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Phone Number *</label>
-                                            <input
-                                                type="tel"
-                                                name="phone"
-                                                value={formData.phone}
-                                                onChange={handleInputChange}
-                                                className="form-input"
-                                                placeholder="Enter phone number"
-                                                required
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Email</label>
-                                            <input
-                                                type="email"
-                                                name="email"
-                                                value={formData.email}
-                                                onChange={handleInputChange}
-                                                className="form-input"
-                                                placeholder="Enter email address"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Measurements Section */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem' }}>
-                                    {/* Shirt Measurements */}
-                                    <div>
-                                        <h4 className="form-section-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                                            <Shirt size={18} />
-                                            Shirt Measurements (inches)
-                                        </h4>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                                            {['length', 'shoulder', 'sleeve', 'chest', 'collar', 'waist'].map(field => (
-                                                <div className="form-group" key={field}>
-                                                    <label className="form-label" style={{ textTransform: 'capitalize', fontSize: '0.8rem' }}>{field}</label>
-                                                    <input
-                                                        type="number"
-                                                        step="0.5"
-                                                        name={field}
-                                                        value={formData.shirt[field]}
-                                                        onChange={handleShirtChange}
-                                                        className="form-input"
-                                                        placeholder="0"
-                                                        style={{ padding: '0.5rem' }}
-                                                    />
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Pant Measurements */}
-                                    <div>
-                                        <h4 className="form-section-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                                            <PanelBottom size={18} />
-                                            Pant Measurements (inches)
-                                        </h4>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                                            {['length', 'waist', 'hip', 'thigh', 'knee', 'bottom'].map(field => (
-                                                <div className="form-group" key={field}>
-                                                    <label className="form-label" style={{ textTransform: 'capitalize', fontSize: '0.8rem' }}>{field}</label>
-                                                    <input
-                                                        type="number"
-                                                        step="0.5"
-                                                        name={field}
-                                                        value={formData.pant[field]}
-                                                        onChange={handlePantChange}
-                                                        className="form-input"
-                                                        placeholder="0"
-                                                        style={{ padding: '0.5rem' }}
-                                                    />
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Order Details Section */}
-                                <div style={{ marginBottom: '1.5rem' }}>
-                                    <h4 className="form-section-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                                        <IndianRupee size={18} />
-                                        Order & Payment Details
-                                    </h4>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
-                                        <div className="form-group">
-                                            <label className="form-label">Number of Sets</label>
-                                            <input
-                                                type="number"
-                                                name="noOfSets"
-                                                value={formData.noOfSets}
-                                                onChange={handleInputChange}
-                                                className="form-input"
-                                                min="1"
-                                                placeholder="1"
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Shirt Amount (₹)</label>
-                                            <input
-                                                type="number"
-                                                name="shirtAmount"
-                                                value={formData.shirtAmount}
-                                                onChange={handleInputChange}
-                                                className="form-input"
-                                                min="0"
-                                                placeholder="500"
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Pant Amount (₹)</label>
-                                            <input
-                                                type="number"
-                                                name="pantAmount"
-                                                value={formData.pantAmount}
-                                                onChange={handleInputChange}
-                                                className="form-input"
-                                                min="0"
-                                                placeholder="400"
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Payment Method</label>
-                                            <select
-                                                name="paymentMethod"
-                                                value={formData.paymentMethod}
-                                                onChange={handleInputChange}
-                                                className="form-select"
-                                            >
-                                                <option value="Cash">Cash</option>
-                                                <option value="UPI">UPI</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Advance Payment Section */}
-                                    <div style={{ 
-                                        marginTop: '1rem', 
-                                        padding: '1rem', 
-                                        backgroundColor: '#fef9c3', 
-                                        borderRadius: '8px',
-                                        border: '1px solid #fde047'
-                                    }}>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'center' }}>
-                                            <div className="form-group" style={{ marginBottom: 0 }}>
-                                                <label className="form-label" style={{ color: '#854d0e', fontWeight: '600' }}>
-                                                    Advance Amount (₹)
-                                                </label>
-                                                <input
-                                                    type="number"
-                                                    name="advanceAmount"
-                                                    value={formData.advanceAmount}
-                                                    onChange={handleInputChange}
-                                                    className="form-input"
-                                                    min="0"
-                                                    max={calculateTotal()}
-                                                    placeholder="0"
-                                                    style={{ backgroundColor: 'white' }}
-                                                />
-                                            </div>
-                                            <div style={{ textAlign: 'right' }}>
-                                                <div style={{ fontSize: '0.75rem', color: '#854d0e', marginBottom: '0.25rem' }}>
-                                                    Total Amount: ₹{calculateTotal().toLocaleString()}
-                                                </div>
-                                                <div style={{ fontSize: '0.75rem', color: '#854d0e', marginBottom: '0.25rem' }}>
-                                                    Advance Paid: ₹{(parseFloat(formData.advanceAmount) || 0).toLocaleString()}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Total & Remaining Amount Display */}
-                                    <div style={{ 
-                                        marginTop: '1rem', 
-                                        padding: '1rem', 
-                                        backgroundColor: '#eff6ff', 
-                                        borderRadius: '8px',
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center'
-                                    }}>
-                                        <div>
-                                            <span style={{ fontWeight: '600', color: '#1e3a8a' }}>Total Amount:</span>
-                                            <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#1e3a8a', marginLeft: '0.5rem' }}>
-                                                ₹{calculateTotal().toLocaleString()}
-                                            </span>
-                                        </div>
-                                        <div style={{ textAlign: 'right' }}>
-                                            <span style={{ fontWeight: '600', color: parseFloat(formData.advanceAmount) > 0 ? '#dc2626' : '#1e3a8a' }}>
-                                                Remaining to Pay:
-                                            </span>
-                                            <span style={{ 
-                                                fontSize: '1.5rem', 
-                                                fontWeight: 'bold', 
-                                                color: parseFloat(formData.advanceAmount) > 0 ? '#dc2626' : '#1e3a8a',
-                                                marginLeft: '0.5rem'
-                                            }}>
-                                                ₹{calculateRemainingAmount().toLocaleString()}
-                                            </span>
-                                            {parseFloat(formData.advanceAmount) > 0 && (
-                                                <div style={{ fontSize: '0.75rem', color: '#16a34a', marginTop: '0.25rem' }}>
-                                                    ✓ Advance of ₹{parseFloat(formData.advanceAmount).toLocaleString()} received
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Modal Footer */}
-                            <div style={{ 
-                                padding: '1rem 1.5rem', 
-                                borderTop: '1px solid #e2e8f0',
-                                display: 'flex',
-                                justifyContent: 'flex-end',
-                                gap: '1rem'
-                            }}>
-                                <button 
-                                    type="button" 
-                                    className="btn btn-secondary" 
-                                    onClick={handleCloseCreateModal}
-                                    disabled={isSubmitting}
-                                >
-                                    Cancel
-                                </button>
-                                <button 
-                                    type="submit" 
-                                    className="btn btn-primary"
-                                    disabled={isSubmitting}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-                                >
-                                    <Save size={18} />
-                                    {isSubmitting ? 'Creating...' : 'Create Order'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Work Assignment Modal */}
-            {showAssignModal && selectedOrder && (
-                <div className="modal-overlay" onClick={handleCloseAssignModal}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-                        <div className="modal-header">
-                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <Zap size={20} />
-                                Assign Work - {selectedOrder.name}
-                            </h3>
-                            <button className="btn btn-sm btn-secondary" onClick={handleCloseAssignModal}>
-                                <X size={18} />
-                            </button>
-                        </div>
-                        <form onSubmit={handleSubmitAssignment}>
-                            <div className="modal-body">
-                                {/* Labour Selection */}
-                                <div style={{ marginBottom: '1rem' }}>
-                                    <label className="form-label">Select Labour *</label>
-                                    <select
-                                        value={assignmentData.labourId}
-                                        onChange={(e) => setAssignmentData({ ...assignmentData, labourId: e.target.value })}
-                                        className="form-input"
-                                        disabled={loadingLabour || isSubmitting}
-                                    >
-                                        <option value="">Choose a labour</option>
-                                        {labourList.map(labour => (
-                                            <option key={labour._id} value={labour._id}>
-                                                {labour.name} ({labour.category})
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                {/* Work Type Selection */}
-                                <div style={{ marginBottom: '1rem' }}>
-                                    <label className="form-label">Work Type *</label>
-                                    {availableWorkTypes.length === 0 ? (
-                                        <div style={{
-                                            padding: '1rem',
-                                            backgroundColor: '#dcfce7',
-                                            borderRadius: '6px',
-                                            color: '#15803d',
-                                            fontSize: '0.9rem',
-                                            textAlign: 'center'
-                                        }}>
-                                            ✓ All work types have been assigned
-                                        </div>
-                                    ) : (
-                                        <select
-                                            value={assignmentData.workType}
-                                            onChange={(e) => setAssignmentData({ ...assignmentData, workType: e.target.value })}
-                                            className="form-input"
-                                            disabled={isSubmitting}
-                                        >
-                                            <option value="">
-                                                Select work type ({availableWorkTypes.length} available)
-                                            </option>
-                                            {availableWorkTypes.map(workType => (
-                                                <option key={workType} value={workType}>
-                                                    {workType}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    )}
-                                </div>
-
-                                {/* Quantity */}
-                                <div style={{ marginBottom: '1rem' }}>
-                                    <label className="form-label">Quantity *</label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        value={assignmentData.quantity}
-                                        onChange={(e) => setAssignmentData({ ...assignmentData, quantity: parseInt(e.target.value) })}
-                                        className="form-input"
-                                        disabled={isSubmitting}
-                                    />
-                                </div>
-
-                                {/* Custom Wage Override */}
-                                <div style={{ marginBottom: '1rem' }}>
-                                    <label className="form-label">Custom Wage (Optional)</label>
-                                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>
-                                        Leave empty to use standard rates
-                                    </div>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.5"
-                                        placeholder="Enter custom wage per unit"
-                                        value={assignmentData.customWage}
-                                        onChange={(e) => setAssignmentData({ ...assignmentData, customWage: e.target.value })}
-                                        className="form-input"
-                                        disabled={isSubmitting}
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Modal Footer */}
-                            <div style={{ 
-                                padding: '1rem 1.5rem', 
-                                borderTop: '1px solid #e2e8f0',
-                                display: 'flex',
-                                justifyContent: 'flex-end',
-                                gap: '1rem'
-                            }}>
-                                <button 
-                                    type="button" 
-                                    className="btn btn-secondary" 
-                                    onClick={handleCloseAssignModal}
-                                    disabled={isSubmitting}
-                                >
-                                    Cancel
-                                </button>
-                                <button 
-                                    type="submit" 
-                                    className="btn btn-primary"
-                                    disabled={isSubmitting || availableWorkTypes.length === 0 || !assignmentData.labourId || !assignmentData.workType || !assignmentData.quantity}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-                                >
-                                    <Zap size={18} />
-                                    {isSubmitting ? 'Assigning...' : 'Assign Work'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Floating Create Button */}
-            <button
-                    onClick={handleOpenCreateModal}
-                    style={{
-position: 'fixed',
-                    bottom: '2rem',
-                    right: '2rem',
-                    backgroundColor: '#1e3a8a',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '50px',
-                    width: '56px',
-                    height: '56px',
-                    fontSize: '1rem',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.5rem',
-                    boxShadow: '0 4px 20px rgba(30, 58, 138, 0.4)',
-                    transition: 'all 0.3s ease',
-                    zIndex: 40,
-                    overflow: 'hidden'
-                    }}
-                    onMouseEnter={e => {
-                    e.currentTarget.style.width = '180px';
-                    e.currentTarget.style.paddingLeft = '1.5rem';
-                    e.currentTarget.style.paddingRight = '1.5rem';
-                    e.currentTarget.querySelector('span').style.display = 'inline';
-                }}
-                onMouseLeave={e => {
-                    e.currentTarget.style.width = '56px';
-                    e.currentTarget.style.paddingLeft = '0';
-                    e.currentTarget.style.paddingRight = '0';
-                    e.currentTarget.querySelector('span').style.display = 'none';
-                    }}
+                {/* STEP 3: Payment Details */}
+                {orderStep === 3 && (
+                  <div>
+                    <h4
+                      style={{
+                        marginBottom: "1.5rem",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                        fontSize: "1.1rem",
+                        fontWeight: "600",
+                      }}
                     >
-                    {/* PLUS ICON — ALWAYS VISIBLE */}
-                    <Plus size={24} strokeWidth={2.5} color="white" />
+                      <IndianRupee size={20} />
+                      Payment & Order Summary
+                    </h4>
 
-                    {/* TEXT — ONLY ON HOVER */}
-                    <span style={{ display: 'none', whiteSpace: 'nowrap' }}>Add New Order</span>
-            </button>
+                    {/* Order Summary */}
+                    <div
+                      style={{
+                        padding: "1.25rem",
+                        backgroundColor: "#f0fdf4",
+                        border: "1px solid #86efac",
+                        borderRadius: "12px",
+                        marginBottom: "1.5rem",
+                      }}
+                    >
+                      <h5
+                        style={{
+                          marginBottom: "1rem",
+                          color: "#15803d",
+                          fontWeight: "600",
+                        }}
+                      >
+                        Services Selected:
+                      </h5>
+                      <div style={{ display: "flex", gap: "1.5rem" }}>
+                        {selectedServices.shirt && (
+                          <div
+                            style={{
+                              padding: "0.75rem",
+                              backgroundColor: "white",
+                              borderRadius: "8px",
+                              border: "1px solid #86efac",
+                              flex: 1,
+                            }}
+                          >
+                            <div
+                              style={{
+                                color: "#15803d",
+                                fontWeight: "600",
+                                marginBottom: "0.25rem",
+                              }}
+                            >
+                              ✓ Shirt
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "0.75rem",
+                                color: "#4b5563",
+                              }}
+                            >
+                              ₹{formData.shirtAmount}/set
+                            </div>
+                          </div>
+                        )}
+                        {selectedServices.pant && (
+                          <div
+                            style={{
+                              padding: "0.75rem",
+                              backgroundColor: "white",
+                              borderRadius: "8px",
+                              border: "1px solid #86efac",
+                              flex: 1,
+                            }}
+                          >
+                            <div
+                              style={{
+                                color: "#15803d",
+                                fontWeight: "600",
+                                marginBottom: "0.25rem",
+                              }}
+                            >
+                              ✓ Pant
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "0.75rem",
+                                color: "#4b5563",
+                              }}
+                            >
+                              ₹{formData.pantAmount}/set
+                            </div>
+                          </div>
+                        )}
+                        {selectedServices.embroidery && (
+                          <div
+                            style={{
+                              padding: "0.75rem",
+                              backgroundColor: "white",
+                              borderRadius: "8px",
+                              border: "1px solid #86efac",
+                              flex: 1,
+                            }}
+                          >
+                            <div
+                              style={{
+                                color: "#15803d",
+                                fontWeight: "600",
+                                marginBottom: "0.25rem",
+                              }}
+                            >
+                              ✓ Embroidery
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "0.75rem",
+                                color: "#4b5563",
+                              }}
+                            >
+                              {embroideryText}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
 
+                    {/* Payment Details */}
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(4, 1fr)",
+                        gap: "1rem",
+                        marginBottom: "1.5rem",
+                      }}
+                    >
+                      <div className="form-group">
+                        <label className="form-label">Number of Sets</label>
+                        <input
+                          type="number"
+                          name="noOfSets"
+                          value={formData.noOfSets}
+                          onChange={handleInputChange}
+                          className="form-input"
+                          min="1"
+                          placeholder="1"
+                        />
+                      </div>
+                      {selectedServices.shirt && (
+                        <div className="form-group">
+                          <label className="form-label">Shirt Amount (₹)</label>
+                          <input
+                            type="number"
+                            name="shirtAmount"
+                            value={formData.shirtAmount}
+                            onChange={handleInputChange}
+                            className="form-input"
+                            min="0"
+                            placeholder="500"
+                          />
+                        </div>
+                      )}
+                      {selectedServices.pant && (
+                        <div className="form-group">
+                          <label className="form-label">Pant Amount (₹)</label>
+                          <input
+                            type="number"
+                            name="pantAmount"
+                            value={formData.pantAmount}
+                            onChange={handleInputChange}
+                            className="form-input"
+                            min="0"
+                            placeholder="400"
+                          />
+                        </div>
+                      )}
+                      <div className="form-group">
+                        <label className="form-label">Payment Method</label>
+                        <select
+                          name="paymentMethod"
+                          value={formData.paymentMethod}
+                          onChange={handleInputChange}
+                          className="form-select"
+                        >
+                          <option value="Cash">Cash</option>
+                          <option value="UPI">UPI</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Advance Payment */}
+                    <div
+                      style={{
+                        padding: "1.25rem",
+                        backgroundColor: "#fef9c3",
+                        borderRadius: "12px",
+                        border: "1px solid #fde047",
+                        marginBottom: "1.5rem",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr",
+                          gap: "1.5rem",
+                          alignItems: "center",
+                        }}
+                      >
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label
+                            className="form-label"
+                            style={{ color: "#854d0e", fontWeight: "600" }}
+                          >
+                            Advance Amount (₹)
+                          </label>
+                          <input
+                            type="number"
+                            name="advanceAmount"
+                            value={formData.advanceAmount}
+                            onChange={handleInputChange}
+                            className="form-input"
+                            min="0"
+                            max={calculateTotal()}
+                            placeholder="0"
+                            style={{
+                              backgroundColor: "white",
+                              fontSize: "1.1rem",
+                              fontWeight: "600",
+                            }}
+                          />
+                        </div>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: "1rem",
+                          }}
+                        >
+                          <div>
+                            <div
+                              style={{
+                                fontSize: "0.75rem",
+                                color: "#854d0e",
+                                marginBottom: "0.5rem",
+                              }}
+                            >
+                              Total Amount
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "1.25rem",
+                                fontWeight: "600",
+                                color: "#854d0e",
+                              }}
+                            >
+                              ₹{calculateTotal().toLocaleString()}
+                            </div>
+                          </div>
+                          <div>
+                            <div
+                              style={{
+                                fontSize: "0.75rem",
+                                color: "#854d0e",
+                                marginBottom: "0.5rem",
+                              }}
+                            >
+                              Remaining
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "1.25rem",
+                                fontWeight: "600",
+                                color: "#dc2626",
+                              }}
+                            >
+                              ₹{calculateRemainingAmount().toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Total Summary Box */}
+                    <div
+                      style={{
+                        padding: "1.5rem",
+                        backgroundColor: "#eff6ff",
+                        borderRadius: "12px",
+                        border: "2px solid #3b82f6",
+                        textAlign: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "0.875rem",
+                          color: "#1e3a8a",
+                          marginBottom: "0.5rem",
+                        }}
+                      >
+                        Order Total
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "2rem",
+                          fontWeight: "bold",
+                          color: "#1e3a8a",
+                        }}
+                      >
+                        ₹{calculateTotal().toLocaleString()}
+                      </div>
+                      {parseFloat(formData.advanceAmount) > 0 && (
+                        <div
+                          style={{
+                            fontSize: "0.75rem",
+                            color: "#16a34a",
+                            marginTop: "0.75rem",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "0.25rem",
+                          }}
+                        >
+                          ✓ Advance paid: ₹
+                          {parseFloat(formData.advanceAmount).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer - Step Navigation */}
+              <div
+                style={{
+                  padding: "1rem 1.5rem",
+                  borderTop: "1px solid #e2e8f0",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: "1rem",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={
+                    orderStep > 1
+                      ? () => setOrderStep(orderStep - 1)
+                      : handleCloseCreateModal
+                  }
+                  disabled={isSubmitting}
+                >
+                  {orderStep > 1 ? "← Back" : "Cancel"}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setOrderStep(orderStep + 1)}
+                  disabled={
+                    isSubmitting ||
+                    orderStep === 3 ||
+                    (orderStep === 1 &&
+                      !selectedServices.shirt &&
+                      !selectedServices.pant &&
+                      !selectedServices.embroidery)
+                  }
+                  style={{
+                    display: orderStep === 3 ? "none" : "inline-flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  Next →
+                </button>
+
+                {orderStep === 3 && (
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={isSubmitting}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      marginLeft: "auto",
+                    }}
+                  >
+                    <Save size={18} />
+                    {isSubmitting ? "Creating..." : "Create Order"}
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
         </div>
-    );
+      )}
+
+      {/* Work Assignment Modal */}
+      {showAssignModal && selectedOrder && (
+        <div className="modal-overlay" onClick={handleCloseAssignModal}>
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "500px" }}
+          >
+            <div className="modal-header">
+              <h3
+                style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+              >
+                <Zap size={20} />
+                Assign Work - {selectedOrder.name}
+              </h3>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={handleCloseAssignModal}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitAssignment}>
+              <div className="modal-body">
+                {/* Labour Selection */}
+                <div style={{ marginBottom: "1rem" }}>
+                  <label className="form-label">Select Labour *</label>
+                  <select
+                    value={assignmentData.labourId}
+                    onChange={(e) =>
+                      setAssignmentData({
+                        ...assignmentData,
+                        labourId: e.target.value,
+                      })
+                    }
+                    className="form-input"
+                    disabled={loadingLabour || isSubmitting}
+                  >
+                    <option value="">Choose a labour</option>
+                    {labourList.map((labour) => (
+                      <option key={labour._id} value={labour._id}>
+                        {labour.name} ({labour.category})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Work Type Selection */}
+                <div style={{ marginBottom: "1rem" }}>
+                  <label className="form-label">Work Type *</label>
+                  <div
+                    style={{
+                      fontSize: "0.75rem",
+                      color: "#64748b",
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    Order includes:{" "}
+                    {selectedOrder?.shirt &&
+                    Object.keys(selectedOrder.shirt).length > 0
+                      ? "Shirt "
+                      : ""}
+                    {selectedOrder?.pant &&
+                    Object.keys(selectedOrder.pant).length > 0
+                      ? "Pant"
+                      : ""}
+                    {(!selectedOrder?.shirt ||
+                      Object.keys(selectedOrder.shirt).length === 0) &&
+                    (!selectedOrder?.pant ||
+                      Object.keys(selectedOrder.pant).length === 0)
+                      ? "None"
+                      : ""}
+                  </div>
+                  {availableWorkTypes.length === 0 ? (
+                    <div
+                      style={{
+                        padding: "1rem",
+                        backgroundColor: "#dcfce7",
+                        borderRadius: "6px",
+                        color: "#15803d",
+                        fontSize: "0.9rem",
+                        textAlign: "center",
+                      }}
+                    >
+                      ✓ All work types have been assigned
+                    </div>
+                  ) : (
+                    <select
+                      value={assignmentData.workType}
+                      onChange={(e) =>
+                        setAssignmentData({
+                          ...assignmentData,
+                          workType: e.target.value,
+                        })
+                      }
+                      className="form-input"
+                      disabled={isSubmitting}
+                    >
+                      <option value="">
+                        Select work type ({availableWorkTypes.length} available)
+                      </option>
+                      {availableWorkTypes.map((workType) => (
+                        <option key={workType} value={workType}>
+                          {workType}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Quantity */}
+                <div style={{ marginBottom: "1rem" }}>
+                  <label className="form-label">Quantity *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={assignmentData.quantity}
+                    onChange={(e) =>
+                      setAssignmentData({
+                        ...assignmentData,
+                        quantity: parseInt(e.target.value),
+                      })
+                    }
+                    className="form-input"
+                    disabled={isSubmitting}
+                  />
+                </div>
+
+                {/* Custom Wage Override */}
+                <div style={{ marginBottom: "1rem" }}>
+                  <label className="form-label">Custom Wage (Optional)</label>
+                  <div
+                    style={{
+                      fontSize: "0.75rem",
+                      color: "#64748b",
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    Leave empty to use standard rates
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    placeholder="Enter custom wage per unit"
+                    value={assignmentData.customWage}
+                    onChange={(e) =>
+                      setAssignmentData({
+                        ...assignmentData,
+                        customWage: e.target.value,
+                      })
+                    }
+                    className="form-input"
+                    disabled={isSubmitting}
+                  />
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div
+                style={{
+                  padding: "1rem 1.5rem",
+                  borderTop: "1px solid #e2e8f0",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "1rem",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleCloseAssignModal}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={
+                    isSubmitting ||
+                    availableWorkTypes.length === 0 ||
+                    !assignmentData.labourId ||
+                    !assignmentData.workType ||
+                    !assignmentData.quantity
+                  }
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <Zap size={18} />
+                  {isSubmitting ? "Assigning..." : "Assign Work"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Create Button */}
+      <button
+        onClick={handleOpenCreateModal}
+        style={{
+          position: "fixed",
+          bottom: "2rem",
+          right: "2rem",
+          backgroundColor: "#1e3a8a",
+          color: "white",
+          border: "none",
+          borderRadius: "50px",
+          width: "56px",
+          height: "56px",
+          fontSize: "1rem",
+          fontWeight: "600",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "0.5rem",
+          boxShadow: "0 4px 20px rgba(30, 58, 138, 0.4)",
+          transition: "all 0.3s ease",
+          zIndex: 40,
+          overflow: "hidden",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.width = "180px";
+          e.currentTarget.style.paddingLeft = "1.5rem";
+          e.currentTarget.style.paddingRight = "1.5rem";
+          e.currentTarget.querySelector("span").style.display = "inline";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.width = "56px";
+          e.currentTarget.style.paddingLeft = "0";
+          e.currentTarget.style.paddingRight = "0";
+          e.currentTarget.querySelector("span").style.display = "none";
+        }}
+      >
+        {/* PLUS ICON — ALWAYS VISIBLE */}
+        <Plus size={24} strokeWidth={2.5} color="white" />
+
+        {/* TEXT — ONLY ON HOVER */}
+        <span style={{ display: "none", whiteSpace: "nowrap" }}>
+          Add New Order
+        </span>
+      </button>
+    </div>
+  );
 };
 
 export default CivilDashboard;
