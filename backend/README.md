@@ -136,4 +136,4 @@ The API returns standard HTTP status codes:
 
 ## License
 
-MIT License
+MIT License.
