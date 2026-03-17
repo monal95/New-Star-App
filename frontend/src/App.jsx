@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Sidebar from "./components/Sidebar";
 import CivilForm from "./components/CivilForm";
 import CivilDashboard from "./components/CivilDashboard";
 import CompanyDashboard from "./components/CompanyDashboard";
 import LabourDashboard from "./components/LabourDashboard";
 import AnalyticsDashboard from "./pages/AnalyticsDashboard";
+import VirtualTryOnDashboard from "./components/VirtualTryOnDashboard";
 import LandingPage from "./components/LandingPage";
 import AdminLogin from "./components/AdminLogin";
 import { ordersAPI } from "./services/api";
@@ -12,11 +13,12 @@ import { Search, Filter } from "lucide-react";
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentPage, setCurrentPage] = useState("landing"); // 'landing', 'login', or 'app'
+  const [currentPage, setCurrentPage] = useState("landingpage"); // 'landing', 'login', or 'app'
   const [activeView, setActiveView] = useState("civil-dashboard");
   const [orders, setOrders] = useState([]);
   const [labourSearchTerm, setLabourSearchTerm] = useState("");
   const [labourFilterCategory, setLabourFilterCategory] = useState("all");
+  const initializeRef = useRef(false);
 
   // Persist current page to localStorage
   useEffect(() => {
@@ -36,13 +38,15 @@ function App() {
 
   // Check if user is already logged in on mount
   useEffect(() => {
+    if (initializeRef.current) return;
+    initializeRef.current = true;
+
     const adminAuth = localStorage.getItem("adminAuth");
     if (adminAuth) {
       // Restore session if user was logged in
-      setIsAuthenticated(true);
-      setCurrentPage("app");
-
       const savedView = localStorage.getItem("activeView");
+      setIsAuthenticated(true); // eslint-disable-line
+      setCurrentPage("app");
       if (savedView) {
         setActiveView(savedView);
       }
@@ -124,6 +128,11 @@ function App() {
           title: "Analytics Dashboard",
           subtitle: "Track your tailoring business performance",
         };
+      case "virtual-tryon":
+        return {
+          title: "Virtual Try-On Studio",
+          subtitle: "Preview your outfit using AI-powered virtual fitting room",
+        };
       case "civil":
         return {
           title: "Customer Orders",
@@ -170,6 +179,8 @@ function App() {
         );
       case "analytics-dashboard":
         return <AnalyticsDashboard />;
+      case "virtual-tryon":
+        return <VirtualTryOnDashboard />;
       case "civil":
         return (
           <CivilForm

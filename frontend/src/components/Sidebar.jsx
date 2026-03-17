@@ -6,6 +6,7 @@ import {
   Briefcase,
   LogOut,
   BarChart3,
+  Sparkles,
 } from "lucide-react";
 
 const Sidebar = ({ activeView, setActiveView, onLogout }) => {
@@ -17,6 +18,11 @@ const Sidebar = ({ activeView, setActiveView, onLogout }) => {
       id: "analytics-dashboard",
       label: "Analytics Dashboard",
       icon: BarChart3,
+    },
+    {
+      id: "virtual-tryon",
+      label: "Virtual Try-On Studio",
+      icon: Sparkles,
     },
     { id: "civil", label: "Customer Orders", icon: UserCircle },
   ];
