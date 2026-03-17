@@ -173,8 +173,8 @@ const processTailorProductivity = (orders) => {
   });
 
   return Object.entries(tailorMap)
-    .map(([name, completed]) => ({
-      name: name.length > 15 ? name.substring(0, 12) + "..." : name,
+    .map(([tailor, completed]) => ({
+      tailor: tailor.length > 15 ? tailor.substring(0, 12) + "..." : tailor,
       completed,
     }))
     .sort((a, b) => b.completed - a.completed)
