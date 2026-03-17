@@ -122,7 +122,7 @@ Navigation sidebar for application menu.
 The pi.js service handles all communication with the backend API. It provides methods for:
 - Company management (CRUD operations)
 - Employee management (CRUD operations)
-- Order management (CRUD operations)
+- Order management (CRUD operations).
 
 ## Configuration Files
 
