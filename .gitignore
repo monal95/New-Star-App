@@ -26,3 +26,13 @@ dist-ssr
 .env
 backend/.env
 backend/.env.example
+
+node_modules/
+dist/
+build/
+.env
+*.log
+*.zip
+*.rar
+*.mp4
+*.exe
