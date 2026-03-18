@@ -106,9 +106,22 @@ function startFrontendServer() {
 // Function to create the main window
 function createWindow() {
   log("Creating main window...");
+
+  // Get screen dimensions to center the window
+  const { screen } = require("electron");
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } =
+    primaryDisplay.workAreaSize;
+  const windowWidth = 1200;
+  const windowHeight = 800;
+  const x = Math.max(0, Math.floor((screenWidth - windowWidth) / 2));
+  const y = Math.max(0, Math.floor((screenHeight - windowHeight) / 2));
+
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: windowWidth,
+    height: windowHeight,
+    x: x,
+    y: y,
     show: false, // Don't show until ready
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

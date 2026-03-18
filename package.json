@@ -4,20 +4,21 @@
   "description": "Smart Tailoring Management System - Desktop Application",
   "main": "main.js",
   "homepage": "./",
-  "author": "Your Name",
+  "author": "Monal Prahanth C",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
     "build": "echo \"Building frontend...\" && cd frontend && npm run build && cd ..",
-    "pack": "electron-packager . TailoringApp --platform=win32 --arch=x64 --overwrite --out=releases",
+    "pack": "electron-packager . TailoringApp --platform=win32 --arch=x64 --out=releases",
     "pack-all": "npm run build && npm run pack",
     "rebuild-native": "electron-rebuild"
   },
-  "dependencies": {},
   "devDependencies": {
     "electron": "latest",
-    "electron-packager": "^17.1.1"
+    "electron-installer-windows": "^3.0.0",
+    "electron-packager": "^17.1.1",
+    "electron-rebuild": "^3.2.9"
   },
   "build": {
     "appId": "com.tailoringapp",
