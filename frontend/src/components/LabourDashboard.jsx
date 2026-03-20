@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Users, Phone, Briefcase, Calendar, Plus, Edit2, Trash2, AlertCircle, X } from 'lucide-react';
 import Toast from './Toast';
-import { labourAPI, workAssignmentsAPI } from '../services/api';
+import { labourAPI, workAssignmentsAPI, wagesAPI } from '../services/api';
 
 // Labour categories constant
 const LABOUR_CATEGORIES = ['Tailor', 'Iron Master', 'Embroider'];
@@ -609,12 +609,47 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
         const fetchAssignments = async () => {
             try {
                 setLoading(true);
-                const data = await workAssignmentsAPI.getByLabour(labour._id);
-                setAssignments(data);
+                
+                // Fetch assignments
+                const assignmentData = await workAssignmentsAPI.getByLabour(labour._id);
+                console.log("[fetchAssignments] Raw assignments:", assignmentData);
+                
+                // Fetch wage configuration
+                const wageConfig = await wagesAPI.get();
+                console.log("[fetchAssignments] Wage config:", wageConfig);
+                
+                // Map task types to wage field names
+                const wageFieldMap = {
+                  'Shirt': 'shirt',
+                  'Pant': 'pant',
+                  'Ironing': 'ironing_pant', // Default to ironing_pant, could be ironing_shirt
+                  'Embroidery': 'embroidery'
+                };
+                
+                // Calculate wages for each assignment
+                const enhancedData = assignmentData.map(assignment => {
+                  const taskType = assignment.task_type;
+                  const quantity = assignment.quantity || 1;
+                  const wageField = wageFieldMap[taskType];
+                  
+                  // Get wage rate from config, default to 0 if not found
+                  const wageRate = (wageConfig && wageConfig[wageField]) ? parseFloat(wageConfig[wageField]) : 0;
+                  const totalWages = wageRate * quantity;
+                  
+                  return {
+                    ...assignment,
+                    wageRate: wageRate,
+                    totalWages: isNaN(totalWages) ? 0 : totalWages
+                  };
+                });
+                
+                console.log("[fetchAssignments] Enhanced assignments with wages:", enhancedData);
+                setAssignments(enhancedData);
                 setError(null);
             } catch (err) {
                 console.error('Error fetching assignments:', err);
                 setError(err.message);
+                setAssignments([]); // Set empty array to avoid NaN issues
             } finally {
                 setLoading(false);
             }
@@ -636,7 +671,10 @@ const LabourStatsModal = ({ labour, onClose, onEdit, onDelete }) => {
         return true;
     }) : assignments;
 
-    const totalWages = filteredAssignments.reduce((sum, work) => sum + work.totalWages, 0);
+    const totalWages = filteredAssignments.reduce((sum, work) => {
+        const wages = work.totalWages || 0;
+        return sum + (isNaN(wages) ? 0 : wages);
+    }, 0);
     const totalQuantity = filteredAssignments.reduce((sum, work) => sum + work.quantity, 0);
 
     return (

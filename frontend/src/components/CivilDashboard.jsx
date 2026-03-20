@@ -91,6 +91,8 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
     "Ironing",
     "Embroidery",
   ]);
+  const [itemDisplayMap, setItemDisplayMap] = useState({}); // Maps item type to detailed quantity info
+  const [availableItemsData, setAvailableItemsData] = useState(null); // Full response from getAvailableItems
   const [assignmentData, setAssignmentData] = useState({
     labourId: "",
     workType: "",
@@ -464,48 +466,123 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
     }
   };
 
-  // Fetch already assigned work types and get available work types based on order
-  const fetchAssignedWorkTypes = async (order) => {
+  // Fetch available items with remaining quantities for smart assignment
+  const fetchAvailableItems = async (order) => {
     try {
-      const assignments = await workAssignmentsAPI.getByOrder(
+      console.log(
+        "[fetchAvailableItems] Fetching for order:",
         order.orderId || order._id,
       );
-      const assignedWorkTypes = assignments.map((a) => a.workType);
 
-      // Determine what work types the customer actually ordered
-      const orderedWorkTypes = [];
-
-      // Check if order has shirt
-      if (
-        order.shirt &&
-        typeof order.shirt === "object" &&
-        Object.keys(order.shirt).length > 0
-      ) {
-        orderedWorkTypes.push("Shirt");
-      }
-
-      // Check if order has pant
-      if (
-        order.pant &&
-        typeof order.pant === "object" &&
-        Object.keys(order.pant).length > 0
-      ) {
-        orderedWorkTypes.push("Pant");
-      }
-
-      // Always include Ironing and Embroidery as optional services
-      orderedWorkTypes.push("Ironing", "Embroidery");
-
-      // Filter to only show work types that are ordered AND not yet assigned
-      const available = orderedWorkTypes.filter(
-        (wt) => !assignedWorkTypes.includes(wt),
+      // Get available items from the backend (calculates remaining quantities)
+      const availableItemsResponse = await workAssignmentsAPI.getAvailableItems(
+        order.id || order._id,
       );
-      setAvailableWorkTypes(available);
+
+      console.log("[fetchAvailableItems] Response:", availableItemsResponse);
+
+      // Filter to only include items with remaining quantity > 0
+      const itemsWithRemaining = availableItemsResponse.items.filter(
+        (item) => item.remainingQty > 0,
+      );
+
+      console.log("[fetchAvailableItems] Items with remaining quantity:", {
+        allItems: availableItemsResponse.items,
+        itemsWithRemaining,
+        summary: availableItemsResponse.summary,
+      });
+
+      // Extract just the item types that still have quantity to assign
+      const availableTypes = itemsWithRemaining.map((item) => item.itemType);
+
+      // Create a display map that includes remaining quantity in the label
+      const itemDisplayMap = {};
+      availableItemsResponse.allItems.forEach((item) => {
+        itemDisplayMap[item.itemType] = item;
+      });
+
+      setAvailableWorkTypes(availableTypes);
+      setItemDisplayMap(itemDisplayMap);
+      setAvailableItemsData(availableItemsResponse);
     } catch (error) {
-      console.error("Error fetching assigned work types:", error);
-      // Fallback: show all types if there's an error
+      console.error("[fetchAvailableItems] Error:", error);
+      // Fallback: show all types if API fails
       setAvailableWorkTypes(["Pant", "Shirt", "Ironing", "Embroidery"]);
+      setItemDisplayMap({});
+      setAvailableItemsData(null);
     }
+  };
+
+  // Filter work types based on selected labour's category AND order's checked services
+  const getFilteredWorkTypes = (labourId) => {
+    const selectedLabour = labourList.find((l) => l._id === labourId);
+    if (!selectedLabour || !selectedOrder) {
+      return [];
+    }
+
+    console.log(
+      "[getFilteredWorkTypes] Labour:",
+      selectedLabour?.category,
+      "Order services:",
+      {
+        shirt:
+          selectedOrder.shirt && Object.keys(selectedOrder.shirt).length > 0,
+        pant: selectedOrder.pant && Object.keys(selectedOrder.pant).length > 0,
+        embroidery: selectedOrder.embroidery,
+      },
+    );
+
+    // Step 1: Determine what labour can do based on category
+    let labourCapableTypes = [];
+    switch (selectedLabour.category) {
+      case "Tailor":
+        // Tailors can do Shirt and Pant work
+        labourCapableTypes = ["Shirt", "Pant", "Ironing"];
+        break;
+      case "Iron Master":
+        // Iron Master can do Ironing work
+        labourCapableTypes = ["Ironing"];
+        break;
+      case "Embroider":
+        // Embroider can do Embroidery work
+        labourCapableTypes = ["Embroidery"];
+        break;
+      default:
+        labourCapableTypes = ["Shirt", "Pant", "Ironing", "Embroidery"];
+    }
+
+    // Step 2: Determine what services are actually ordered in this order
+    let orderedServices = [];
+    if (selectedOrder.shirt && Object.keys(selectedOrder.shirt).length > 0) {
+      orderedServices.push("Shirt");
+      orderedServices.push("Ironing"); // Ironing is available if shirt/pant ordered
+    }
+    if (selectedOrder.pant && Object.keys(selectedOrder.pant).length > 0) {
+      orderedServices.push("Pant");
+      orderedServices.push("Ironing"); // Ironing is available if shirt/pant ordered
+    }
+    if (selectedOrder.embroidery) {
+      orderedServices.push("Embroidery");
+    }
+
+    // Step 3: Return INTERSECTION: work types labour can do AND are ordered
+    const filtered = orderedServices.filter((wt) =>
+      labourCapableTypes.includes(wt),
+    );
+    // Remove duplicates
+    const unique = [...new Set(filtered)];
+
+    console.log("[getFilteredWorkTypes] Result:", unique);
+    return unique;
+  };
+
+  // Update work type dropdown when labour is selected
+  const handleLabourChange = (labourId) => {
+    setAssignmentData({
+      ...assignmentData,
+      labourId: labourId,
+      workType: "", // Reset work type when labour changes
+    });
   };
 
   // Open assignment modal
@@ -517,7 +594,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
       quantity: 1,
       customWage: "",
     });
-    await fetchAssignedWorkTypes(order);
+    await fetchAvailableItems(order);
     await loadLabourList();
     setShowAssignModal(true);
   };
@@ -551,37 +628,79 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
       return;
     }
 
+    const assignedQuantity = parseInt(assignmentData.quantity) || 0;
+
+    // Validate quantity against remaining quantity for the specific work type
+    const itemInfo = itemDisplayMap[assignmentData.workType];
+    const remainingQty = itemInfo?.remainingQty || 0;
+
+    console.log("[Assignment Validation]", {
+      workType: assignmentData.workType,
+      itemInfo,
+      remainingQty,
+      requestedQty: assignedQuantity,
+      labour: assignmentData.labourId,
+    });
+
+    if (assignedQuantity <= 0) {
+      setToast({
+        show: true,
+        message: "Assigned quantity must be greater than 0",
+        type: "error",
+      });
+      return;
+    }
+
+    // New validation: Check against remaining quantity for the specific work type
+    if (assignedQuantity > remainingQty) {
+      setToast({
+        show: true,
+        message: `Cannot assign ${assignedQuantity} ${assignmentData.workType}(s). Only ${remainingQty} remaining.`,
+        type: "error",
+      });
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       const selectedLabour = labourList.find(
         (l) => l._id === assignmentData.labourId,
       );
 
-      await workAssignmentsAPI.create({
+      const assignmentPayload = {
         labourId: assignmentData.labourId,
         orderId: selectedOrder.orderId || selectedOrder._id,
-        workType: assignmentData.workType,
+        task_type: assignmentData.workType,
         quantity: parseInt(assignmentData.quantity),
         customWage: assignmentData.customWage
           ? parseFloat(assignmentData.customWage)
           : null,
-        orderCustomerName: selectedOrder.name,
-        orderDate: selectedOrder.date,
-      });
+      };
+
+      console.log("[Submitting Assignment]", assignmentPayload);
+
+      await workAssignmentsAPI.create(assignmentPayload);
 
       setToast({
         show: true,
-        message: `Work assigned to ${selectedLabour?.name}`,
+        message: `Work assigned to ${selectedLabour?.name} successfully`,
         type: "success",
       });
-      handleCloseAssignModal();
 
-      // Refresh the assignment data for this order
-      await fetchAssignedWorkTypes(selectedOrder.orderId || selectedOrder._id);
+      // Refresh available items to show updated remaining quantities
+      if (selectedOrder) {
+        await fetchAvailableItems(selectedOrder);
+      }
+
+      handleCloseAssignModal();
+      if (refreshOrders) {
+        refreshOrders();
+      }
     } catch (error) {
+      console.error("[Assignment Error]", error);
       setToast({
         show: true,
-        message: error.message || "Failed to assign work",
+        message: `Failed to assign work: ${error.message}`,
         type: "error",
       });
     } finally {
@@ -2353,12 +2472,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                   <label className="form-label">Select Labour *</label>
                   <select
                     value={assignmentData.labourId}
-                    onChange={(e) =>
-                      setAssignmentData({
-                        ...assignmentData,
-                        labourId: e.target.value,
-                      })
-                    }
+                    onChange={(e) => handleLabourChange(e.target.value)}
                     className="form-input"
                     disabled={loadingLabour || isSubmitting}
                   >
@@ -2381,23 +2495,61 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                       marginBottom: "0.5rem",
                     }}
                   >
-                    Order includes:{" "}
-                    {selectedOrder?.shirt &&
-                    Object.keys(selectedOrder.shirt).length > 0
-                      ? "Shirt "
-                      : ""}
-                    {selectedOrder?.pant &&
-                    Object.keys(selectedOrder.pant).length > 0
-                      ? "Pant"
-                      : ""}
-                    {(!selectedOrder?.shirt ||
-                      Object.keys(selectedOrder.shirt).length === 0) &&
-                    (!selectedOrder?.pant ||
-                      Object.keys(selectedOrder.pant).length === 0)
-                      ? "None"
-                      : ""}
+                    {assignmentData.labourId ? (
+                      <>
+                        {
+                          labourList.find(
+                            (l) => l._id === assignmentData.labourId,
+                          )?.category
+                        }{" "}
+                        can do:{" "}
+                        {assignmentData.labourId === ""
+                          ? ""
+                          : labourList.find(
+                                (l) => l._id === assignmentData.labourId,
+                              )?.category === "Tailor"
+                            ? "Shirt, Pant"
+                            : labourList.find(
+                                  (l) => l._id === assignmentData.labourId,
+                                )?.category === "Iron Master"
+                              ? "Ironing"
+                              : "Embroidery"}
+                      </>
+                    ) : (
+                      <>
+                        Order includes:{" "}
+                        {selectedOrder?.shirt &&
+                        Object.keys(selectedOrder.shirt).length > 0
+                          ? "Shirt "
+                          : ""}
+                        {selectedOrder?.pant &&
+                        Object.keys(selectedOrder.pant).length > 0
+                          ? "Pant"
+                          : ""}
+                        {(!selectedOrder?.shirt ||
+                          Object.keys(selectedOrder.shirt).length === 0) &&
+                        (!selectedOrder?.pant ||
+                          Object.keys(selectedOrder.pant).length === 0)
+                          ? "None"
+                          : ""}
+                      </>
+                    )}
                   </div>
-                  {availableWorkTypes.length === 0 ? (
+                  {!assignmentData.labourId ? (
+                    <div
+                      style={{
+                        padding: "1rem",
+                        backgroundColor: "#fef2f2",
+                        borderRadius: "6px",
+                        color: "#991b1b",
+                        fontSize: "0.9rem",
+                        textAlign: "center",
+                      }}
+                    >
+                      ⚠️ Please select a labour first
+                    </div>
+                  ) : getFilteredWorkTypes(assignmentData.labourId).length ===
+                    0 ? (
                     <div
                       style={{
                         padding: "1rem",
@@ -2408,7 +2560,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                         textAlign: "center",
                       }}
                     >
-                      ✓ All work types have been assigned
+                      ✓ All applicable work types have been assigned
                     </div>
                   ) : (
                     <select
@@ -2417,39 +2569,93 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                         setAssignmentData({
                           ...assignmentData,
                           workType: e.target.value,
+                          quantity: 1, // Reset quantity when work type changes
                         })
                       }
                       className="form-input"
                       disabled={isSubmitting}
                     >
                       <option value="">
-                        Select work type ({availableWorkTypes.length} available)
+                        Select work type (
+                        {getFilteredWorkTypes(assignmentData.labourId).length}{" "}
+                        available)
                       </option>
-                      {availableWorkTypes.map((workType) => (
-                        <option key={workType} value={workType}>
-                          {workType}
-                        </option>
-                      ))}
+                      {getFilteredWorkTypes(assignmentData.labourId).map(
+                        (workType) => {
+                          const itemInfo = itemDisplayMap[workType];
+                          const displayLabel = itemInfo
+                            ? `${workType} (Remaining: ${itemInfo.remainingQty})`
+                            : workType;
+                          return (
+                            <option key={workType} value={workType}>
+                              {displayLabel}
+                            </option>
+                          );
+                        },
+                      )}
                     </select>
                   )}
                 </div>
 
                 {/* Quantity */}
                 <div style={{ marginBottom: "1rem" }}>
-                  <label className="form-label">Quantity *</label>
+                  <label className="form-label">
+                    Quantity *
+                    {assignmentData.workType &&
+                      itemDisplayMap[assignmentData.workType] && (
+                        <span style={{ fontSize: "0.85rem", color: "#64748b" }}>
+                          {" "}
+                          (Max:{" "}
+                          {itemDisplayMap[assignmentData.workType].remainingQty}
+                          )
+                        </span>
+                      )}
+                  </label>
                   <input
                     type="number"
                     min="1"
-                    value={assignmentData.quantity}
-                    onChange={(e) =>
+                    max={
+                      assignmentData.workType &&
+                      itemDisplayMap[assignmentData.workType]
+                        ? itemDisplayMap[assignmentData.workType].remainingQty
+                        : 999
+                    }
+                    value={assignmentData.quantity || ""}
+                    onChange={(e) => {
+                      const val = e.target.value ? parseInt(e.target.value) : 1;
                       setAssignmentData({
                         ...assignmentData,
-                        quantity: parseInt(e.target.value),
-                      })
-                    }
+                        quantity: isNaN(val) ? 1 : val,
+                      });
+                    }}
                     className="form-input"
                     disabled={isSubmitting}
+                    style={{
+                      borderColor:
+                        assignmentData.workType &&
+                        itemDisplayMap[assignmentData.workType] &&
+                        assignmentData.quantity >
+                          itemDisplayMap[assignmentData.workType].remainingQty
+                          ? "#ef4444"
+                          : undefined,
+                    }}
                   />
+                  {assignmentData.workType &&
+                    itemDisplayMap[assignmentData.workType] &&
+                    assignmentData.quantity >
+                      itemDisplayMap[assignmentData.workType].remainingQty && (
+                      <div
+                        style={{
+                          color: "#dc2626",
+                          fontSize: "0.85rem",
+                          marginTop: "0.25rem",
+                        }}
+                      >
+                        ⚠️ Quantity exceeds available: {assignmentData.quantity}{" "}
+                        &gt;{" "}
+                        {itemDisplayMap[assignmentData.workType].remainingQty}
+                      </div>
+                    )}
                 </div>
 
                 {/* Custom Wage Override */}
@@ -2505,7 +2711,11 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                   className="btn btn-primary"
                   disabled={
                     isSubmitting ||
-                    availableWorkTypes.length === 0 ||
+                    (assignmentData.labourId &&
+                      getFilteredWorkTypes(assignmentData.labourId).length ===
+                        0) ||
+                    (!assignmentData.labourId &&
+                      availableWorkTypes.length === 0) ||
                     !assignmentData.labourId ||
                     !assignmentData.workType ||
                     !assignmentData.quantity

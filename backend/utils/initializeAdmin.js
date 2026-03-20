@@ -1,28 +1,39 @@
 const bcrypt = require("bcrypt");
+const { getRow, run } = require("../config/db");
 
 /**
  * Initialize admin user if it doesn't exist
  * This function runs when the server starts
+ * Uses SQLite (not MongoDB)
  */
-const initializeAdmin = async (db) => {
+const initializeAdmin = async () => {
   try {
-    // Delete any existing admin users
-    await db.collection("admins").deleteMany({});
-    console.log("✓ Existing admin users deleted");
+    // Check if admin already exists
+    const existingAdmin = await getRow("SELECT * FROM admins LIMIT 1", []);
+    
+    if (existingAdmin) {
+      console.log("✓ Admin user already exists, skipping initialization");
+      return existingAdmin;
+    }
 
-    // Hash the new password
+    // Hash the default password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash("newstar1234", salt);
 
+    // Get current timestamp
+    const now = new Date().toISOString();
+
     // Create default admin user
-    const result = await db.collection("admins").insertOne({
-      username: "Chinna Kannan (Owner)",
-      email: "monalprashanth98@gmail.com",
-      password: hashedPassword,
-      role: "admin",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    const result = await run(
+      "INSERT INTO admins (username, email, password, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)",
+      [
+        "Chinna Kannan (Owner)",
+        "monalprashanth98@gmail.com",
+        hashedPassword,
+        now,
+        now,
+      ]
+    );
 
     console.log("✓ Admin user created successfully");
     console.log("  Username: Chinna Kannan (Owner)");
@@ -32,7 +43,7 @@ const initializeAdmin = async (db) => {
 
     return result;
   } catch (error) {
-    console.error("Error initializing admin:", error);
+    console.error("❌ Error initializing admin:", error);
     throw error;
   }
 };

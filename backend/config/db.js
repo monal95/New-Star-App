@@ -89,6 +89,11 @@ const initializeTables = () => {
           phone TEXT,
           joinDate TEXT,
           status TEXT DEFAULT 'Active',
+          orderId TEXT,
+          noOfSets INTEGER DEFAULT 1,
+          shirt TEXT,
+          pant TEXT,
+          position TEXT DEFAULT 'Employee',
           createdAt TEXT,
           updatedAt TEXT,
           FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
@@ -188,6 +193,21 @@ const initializeTables = () => {
         )
       `);
 
+      // Order Items table for tracking item types per order (for split assignments)
+      db.run(`
+        CREATE TABLE IF NOT EXISTS order_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          order_id INTEGER NOT NULL,
+          item_type TEXT NOT NULL,
+          total_qty INTEGER NOT NULL,
+          assigned_qty INTEGER DEFAULT 0,
+          createdAt TEXT,
+          updatedAt TEXT,
+          FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+          UNIQUE(order_id, item_type)
+        )
+      `);
+
       // Admins table for authentication
       db.run(`
         CREATE TABLE IF NOT EXISTS admins (
@@ -218,11 +238,71 @@ const initializeTables = () => {
             console.error("Error creating tables:", err);
             reject(err);
           } else {
-            console.log("✅ Tables initialized successfully");
-            resolve();
+            // Add migration to add missing columns to employees table
+            addMissingColumns()
+              .then(() => {
+                console.log("✅ Tables initialized successfully");
+                resolve();
+              })
+              .catch((migrationErr) => {
+                console.error("Error during migration:", migrationErr);
+                resolve(); // Continue anyway
+              });
           }
         },
       );
+    });
+  });
+};
+
+// Migration: Add missing columns to existing tables
+const addMissingColumns = () => {
+  return new Promise((resolve) => {
+    // Get the current columns of the employees table
+    db.all(`PRAGMA table_info(employees)`, (err, columns) => {
+      if (err) {
+        console.error("❌ Error checking table columns:", err);
+        resolve();
+        return;
+      }
+
+      const existingColumns = columns.map((col) => col.name);
+
+      const requiredColumns = [
+        { name: "orderId", type: "TEXT" },
+        { name: "noOfSets", type: "INTEGER DEFAULT 1" },
+        { name: "shirt", type: "TEXT" },
+        { name: "pant", type: "TEXT" },
+        { name: "position", type: "TEXT DEFAULT 'Employee'" },
+      ];
+
+      let pendingAlters = 0;
+
+      requiredColumns.forEach((col) => {
+        if (!existingColumns.includes(col.name)) {
+          pendingAlters++;
+          console.log(`📝 Adding missing column: ${col.name}`);
+          db.run(
+            `ALTER TABLE employees ADD COLUMN ${col.name} ${col.type}`,
+            (err) => {
+              if (err) {
+                console.error(`❌ Error adding column ${col.name}:`, err);
+              } else {
+                console.log(`✅ Added column ${col.name} to employees table`);
+              }
+              pendingAlters--;
+              if (pendingAlters === 0) {
+                resolve();
+              }
+            },
+          );
+        }
+      });
+
+      if (pendingAlters === 0) {
+        console.log("✅ All required columns already exist");
+        resolve();
+      }
     });
   });
 };

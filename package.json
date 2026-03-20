@@ -7,11 +7,12 @@
   "author": "Monal Prahanth C",
   "license": "MIT",
   "scripts": {
-    "start": "electron .",
+    "start": "npm run build:frontend && electron .",
     "dev": "electron .",
-    "build": "echo \"Building frontend...\" && cd frontend && npm run build && cd ..",
-    "pack": "electron-packager . TailoringApp --platform=win32 --arch=x64 --out=releases",
-    "pack-all": "npm run build && npm run pack",
+    "build": "npm run build:frontend && npm run pack",
+    "build:frontend": "echo \"Building frontend...\" && cd frontend && npm install && npm run build && cd ..",
+    "pack": "electron-packager . TailoringApp --platform=win32 --arch=x64 --out=releases --overwrite",
+    "pack-all": "npm run build",
     "rebuild-native": "electron-rebuild"
   },
   "devDependencies": {

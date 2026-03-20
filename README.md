@@ -75,8 +75,8 @@ npm run dev
 On first run, admin user is created automatically:
 
 ```
-Email: admin@newstar.com
-Password: newstar123
+Email: monalprashanth98@gmail.com
+Password: newstar1234
 ```
 
 ⚠️ **Important:** Change password after first login

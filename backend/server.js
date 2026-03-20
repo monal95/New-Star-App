@@ -18,7 +18,6 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// Import routes
 const ordersRoutes = require("./routes/orders");
 const companiesRoutes = require("./routes/companies");
 const companyEmployeesRoutes = require("./routes/companyEmployees");
@@ -27,6 +26,7 @@ const wagesRoutes = require("./routes/wages");
 const workAssignmentsRoutes = require("./routes/workAssignments");
 const authRoutes = require("./routes/auth");
 const tryonRoutes = require("./routes/tryon");
+const { initializeAdmin } = require("./utils/initializeAdmin");
 
 // Routes
 app.get("/api/health", (req, res) => {
@@ -50,6 +50,7 @@ const startServer = async () => {
   try {
     await connectDB();
     await initializeTables();
+    await initializeAdmin();
 
     app.listen(PORT, () => {
       console.log(`\n========================================`);

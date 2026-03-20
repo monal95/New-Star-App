@@ -25,7 +25,10 @@ router.get("/company/:companyId", async (req, res) => {
     // Parse JSON measurements fields if they exist
     const parsedEmployees = employees.map((emp) => ({
       ...emp,
-      orderId: emp.orderId || req.params.companyId,
+      orderId:
+        emp.orderId && emp.orderId.toLowerCase() !== "auto"
+          ? emp.orderId
+          : `EMP${emp.id}`,
       shirt: emp.shirt ? JSON.parse(emp.shirt) : {},
       pant: emp.pant ? JSON.parse(emp.pant) : {},
     }));
@@ -51,6 +54,10 @@ router.get("/:id", async (req, res) => {
     // Parse JSON measurements fields if they exist
     const parsedEmployee = {
       ...employee,
+      orderId:
+        employee.orderId && employee.orderId.toLowerCase() !== "auto"
+          ? employee.orderId
+          : `EMP${employee.id}`,
       shirt: employee.shirt ? JSON.parse(employee.shirt) : {},
       pant: employee.pant ? JSON.parse(employee.pant) : {},
     };
@@ -69,11 +76,20 @@ router.post("/", async (req, res) => {
       req.body;
 
     // Validate required fields
-    if (!companyId || !name || !phone) {
+    if (!companyId || !name) {
+      console.log("❌ Missing required fields:", { companyId, name });
       return res
         .status(400)
-        .json({ error: "Company ID, name, and phone are required" });
+        .json({ error: "Company ID and name are required" });
     }
+
+    // Get count of existing orders for this company to generate incremental OrderID
+    const countResult = await getRow(
+      "SELECT COUNT(*) as count FROM employees WHERE company_id = ?",
+      [companyId],
+    );
+    const nextOrderNumber = (countResult?.count || 0) + 1;
+    const generatedOrderId = `ORD${String(nextOrderNumber).padStart(3, "0")}`;
 
     // Validate position
     const validPosition = POSITION_TYPES.includes(position)
@@ -81,11 +97,20 @@ router.post("/", async (req, res) => {
       : "Employee";
     const now = new Date().toISOString();
 
+    console.log("📝 Creating employee order:", {
+      name,
+      companyId,
+      position: validPosition,
+      noOfSets,
+      orderId: generatedOrderId,
+    });
+
     const result = await run(
-      `INSERT INTO employees (name, role, company_id, email, phone, joinDate, status, createdAt, updatedAt, orderId, noOfSets, shirt, pant)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO employees (name, role, position, company_id, email, phone, joinDate, status, createdAt, updatedAt, orderId, noOfSets, shirt, pant)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
+        validPosition,
         validPosition,
         companyId,
         "",
@@ -94,7 +119,7 @@ router.post("/", async (req, res) => {
         "Pending",
         now,
         now,
-        orderId || `EMP${Date.now().toString().slice(-6)}`,
+        generatedOrderId,
         parseInt(noOfSets) || 1,
         JSON.stringify(shirt || {}),
         JSON.stringify(pant || {}),
@@ -107,14 +132,15 @@ router.post("/", async (req, res) => {
       [companyId],
     );
 
+    console.log("✅ Employee order created successfully:", result.id);
+
     res.status(201).json({
       message: "Employee order created successfully",
       employee: {
         id: result.id,
         companyId,
-        orderId: orderId || `EMP${Date.now().toString().slice(-6)}`,
+        orderId: generatedOrderId,
         name,
-        phone,
         position: validPosition,
         noOfSets: parseInt(noOfSets) || 1,
         shirt: shirt || {},
@@ -126,8 +152,11 @@ router.post("/", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Error creating employee order:", error);
-    res.status(500).json({ error: "Failed to create employee order" });
+    console.error("❌ Error creating employee order:", error);
+    res.status(500).json({
+      error: "Failed to create employee order",
+      details: error.message,
+    });
   }
 });
 
@@ -243,37 +272,6 @@ router.get("/company/:companyId/next-id", async (req, res) => {
     let nextId = "EMP001";
     if (employees.length > 0 && employees[0].orderId) {
       const lastNum = parseInt(employees[0].orderId.replace("EMP", "")) || 0;
-      nextId = `EMP${String(lastNum + 1).padStart(3, "0")}`;
-    }
-
-    res.json({ nextId });
-  } catch (error) {
-    console.error("Error generating order ID:", error);
-    res.status(500).json({ error: "Failed to generate order ID" });
-  }
-});
-
-// Get position types
-router.get("/positions/list", async (req, res) => {
-  res.json({ positions: POSITION_TYPES });
-});
-
-// Generate next order ID for a company
-router.get("/company/:companyId/next-id", async (req, res) => {
-  try {
-    const db = getDB();
-    const companyId = new ObjectId(req.params.companyId);
-
-    const lastEmployee = await db
-      .collection("company_employees")
-      .find({ companyId })
-      .sort({ createdAt: -1 })
-      .limit(1)
-      .toArray();
-
-    let nextId = "EMP001";
-    if (lastEmployee.length > 0 && lastEmployee[0].orderId) {
-      const lastNum = parseInt(lastEmployee[0].orderId.replace("EMP", "")) || 0;
       nextId = `EMP${String(lastNum + 1).padStart(3, "0")}`;
     }
 

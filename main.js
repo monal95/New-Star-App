@@ -38,6 +38,38 @@ function startFrontendServer() {
     }
 
     const server = http.createServer((req, res) => {
+      // Handle API proxy requests - forward to Express backend on localhost:5000
+      if (req.url.startsWith("/api")) {
+        const backendUrl = `http://localhost:5000${req.url}`;
+        const clientReq = http.request(
+          backendUrl,
+          {
+            method: req.method,
+            headers: {
+              ...req.headers,
+              host: "localhost:5000",
+            },
+          },
+          (clientRes) => {
+            res.writeHead(clientRes.statusCode, clientRes.headers);
+            clientRes.pipe(res);
+          },
+        );
+
+        clientReq.on("error", (err) => {
+          log("Backend proxy error: " + err.toString());
+          res.writeHead(502, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Backend service unavailable" }));
+        });
+
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          req.pipe(clientReq);
+        } else {
+          clientReq.end();
+        }
+        return;
+      }
+
       // Handle routing - always serve index.html for non-file requests
       let filePath = path.join(
         distPath,
@@ -73,18 +105,36 @@ function startFrontendServer() {
           // Determine content type
           const ext = path.extname(filePath);
           let contentType = "text/plain";
-          if (ext === ".html") contentType = "text/html";
-          else if (ext === ".css") contentType = "text/css";
-          else if (ext === ".js") contentType = "application/javascript";
-          else if (ext === ".json") contentType = "application/json";
+          if (ext === ".html") contentType = "text/html; charset=utf-8";
+          else if (ext === ".css") contentType = "text/css; charset=utf-8";
+          else if (ext === ".js")
+            contentType = "application/javascript; charset=utf-8";
+          else if (ext === ".json")
+            contentType = "application/json; charset=utf-8";
           else if (ext === ".png") contentType = "image/png";
           else if (ext === ".jpg" || ext === ".jpeg")
             contentType = "image/jpeg";
           else if (ext === ".svg") contentType = "image/svg+xml";
           else if (ext === ".woff") contentType = "font/woff";
           else if (ext === ".woff2") contentType = "font/woff2";
+          else if (ext === ".ttf") contentType = "font/ttf";
+          else if (ext === ".eot")
+            contentType = "application/vnd.ms-fontobject";
 
-          res.writeHead(200, { "Content-Type": contentType });
+          // Set cache control headers
+          const cacheControl = ext === ".html" ? "no-cache" : "max-age=86400";
+          const headers = {
+            "Content-Type": contentType,
+            "Cache-Control": cacheControl,
+          };
+
+          // Add CSP header for HTML files
+          if (ext === ".html") {
+            headers["Content-Security-Policy"] =
+              "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' http://localhost:3000 http://localhost:5000 http://127.0.0.1:3000 http://127.0.0.1:5000; frame-src 'self' data:;";
+          }
+
+          res.writeHead(200, headers);
           res.end(data);
         }
       });

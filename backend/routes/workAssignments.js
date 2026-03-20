@@ -2,13 +2,46 @@ const express = require("express");
 const router = express.Router();
 const { runQuery, getRow, run } = require("../config/db");
 
+// Get all work assignments
+router.get("/", async (req, res) => {
+  try {
+    const assignments = await runQuery(
+      "SELECT * FROM work_assignments ORDER BY assigned_date DESC",
+      [],
+    );
+
+    res.json(assignments || []);
+  } catch (error) {
+    console.error("Error fetching work assignments:", error);
+    res.status(500).json({ error: "Failed to fetch work assignments" });
+  }
+});
+
 // Get work assignments for a specific labour
 router.get("/labour/:labourId", async (req, res) => {
   try {
     const { labourId } = req.params;
 
     const assignments = await runQuery(
-      "SELECT * FROM work_assignments WHERE labour_id = ? ORDER BY assigned_date DESC",
+      `SELECT 
+        wa.id,
+        wa.labour_id,
+        wa.order_id,
+        wa.task_type,
+        wa.quantity,
+        wa.status,
+        wa.assigned_date AS assignedDate,
+        wa.completed_date,
+        wa.createdAt,
+        wa.updatedAt,
+        o.orderId,
+        o.customer_name AS orderCustomerName,
+        o.date,
+        o.delivery_date
+      FROM work_assignments wa
+      LEFT JOIN orders o ON wa.order_id = o.id
+      WHERE wa.labour_id = ? 
+      ORDER BY wa.assigned_date DESC`,
       [labourId],
     );
 
@@ -25,7 +58,25 @@ router.get("/order/:orderId", async (req, res) => {
     const { orderId } = req.params;
 
     const assignments = await runQuery(
-      "SELECT * FROM work_assignments WHERE order_id = ? ORDER BY assigned_date DESC",
+      `SELECT 
+        wa.id,
+        wa.labour_id,
+        wa.order_id,
+        wa.task_type,
+        wa.quantity,
+        wa.status,
+        wa.assigned_date AS assignedDate,
+        wa.completed_date,
+        wa.createdAt,
+        wa.updatedAt,
+        o.orderId,
+        o.customer_name AS orderCustomerName,
+        o.date,
+        o.delivery_date
+      FROM work_assignments wa
+      LEFT JOIN orders o ON wa.order_id = o.id
+      WHERE wa.order_id = ? 
+      ORDER BY wa.assigned_date DESC`,
       [orderId],
     );
 
@@ -41,30 +92,145 @@ router.post("/", async (req, res) => {
   try {
     const { labourId, orderId, task_type, quantity } = req.body;
 
+    console.log("\n[WorkAssignment POST] Received request:", {
+      labourId,
+      orderId,
+      task_type,
+      quantity,
+      bodyKeys: Object.keys(req.body),
+    });
+
     // Validation
     if (!labourId || !orderId || !task_type || quantity === undefined) {
+      console.error("[WorkAssignment POST] Validation failed:", {
+        labourId,
+        orderId,
+        task_type,
+        quantity,
+      });
       return res.status(400).json({
         error: "labourId, orderId, task_type, and quantity are required",
+        received: { labourId, orderId, task_type, quantity },
       });
     }
 
     // Validate work type
     const validWorkTypes = ["Pant", "Shirt", "Ironing", "Embroidery"];
     if (!validWorkTypes.includes(task_type)) {
+      console.error("[WorkAssignment POST] Invalid task type:", task_type);
       return res.status(400).json({
         error: `Invalid task type. Must be one of: ${validWorkTypes.join(", ")}`,
+      });
+    }
+
+    // Fetch the order to get its quantity AND its internal ID
+    const order = await getRow(
+      "SELECT * FROM orders WHERE id = ? OR orderId = ?",
+      [orderId, orderId],
+    );
+
+    if (!order) {
+      console.error("[WorkAssignment POST] Order not found:", orderId);
+      return res.status(404).json({
+        error: "Order not found",
+      });
+    }
+
+    // Fetch the labour to verify it exists and get its internal ID
+    const labour = await getRow("SELECT * FROM labour WHERE id = ?", [
+      labourId,
+    ]);
+
+    if (!labour) {
+      console.error("[WorkAssignment POST] Labour not found:", labourId);
+      return res.status(404).json({
+        error: "Labour not found",
+      });
+    }
+
+    const assignedQuantity = parseInt(quantity) || 0;
+
+    if (assignedQuantity <= 0) {
+      console.error(
+        "[WorkAssignment POST] Invalid quantity:",
+        assignedQuantity,
+      );
+      return res.status(400).json({
+        error: "Assigned quantity must be greater than 0",
+      });
+    }
+
+    // Calculate remaining quantity for this specific item type
+    // First, try to get from order_items table (preferred)
+    let totalQty = 0;
+
+    const orderItem = await getRow(
+      "SELECT total_qty FROM order_items WHERE order_id = ? AND item_type = ?",
+      [order.id, task_type],
+    );
+
+    if (orderItem) {
+      // Use quantity from order_items table if available
+      totalQty = orderItem.total_qty || 0;
+    } else {
+      // Fallback: Use noOfSets for all item types
+      totalQty = order.noOfSets || 1;
+    }
+
+    // Get total already assigned for this item type
+    const assignmentResult = await getRow(
+      `SELECT SUM(quantity) as totalAssigned FROM work_assignments 
+       WHERE order_id = ? AND task_type = ?`,
+      [order.id, task_type],
+    );
+
+    const alreadyAssigned = assignmentResult?.totalAssigned || 0;
+    const remainingQty = Math.max(0, totalQty - alreadyAssigned);
+
+    console.log("[WorkAssignment POST] Quantity validation:", {
+      task_type,
+      totalQty,
+      alreadyAssigned,
+      remainingQty,
+      requestedQty: assignedQuantity,
+      valid: assignedQuantity <= remainingQty,
+    });
+
+    // NEW: Validate assigned quantity does not exceed remaining quantity
+    if (assignedQuantity > remainingQty) {
+      console.error(
+        `[WorkAssignment POST] Quantity error: requested ${assignedQuantity} exceeds remaining ${remainingQty} for ${task_type}`,
+      );
+      return res.status(400).json({
+        error: `Cannot assign ${assignedQuantity} ${task_type}(s). Only ${remainingQty} remaining available.`,
+        details: {
+          task_type,
+          totalQty,
+          alreadyAssigned,
+          remainingQty,
+          requested: assignedQuantity,
+        },
       });
     }
 
     const now = new Date().toISOString();
     const assignedDate = now.split("T")[0];
 
+    console.log("[WorkAssignment POST] Inserting into database:", {
+      labour_id: labour.id,
+      order_id: order.id,
+      task_type,
+      quantity: parseInt(quantity),
+      status: "Pending",
+      assigned_date: assignedDate,
+    });
+
     const result = await run(
       `INSERT INTO work_assignments (labour_id, order_id, task_type, quantity, status, assigned_date, createdAt, updatedAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        labourId,
-        orderId,
+        labour.id,
+        order.id,
         task_type,
         parseInt(quantity),
         "Pending",
@@ -73,6 +239,8 @@ router.post("/", async (req, res) => {
         now,
       ],
     );
+
+    console.log("[WorkAssignment POST] Insert successful:", result);
 
     res.status(201).json({
       message: "Work assigned successfully",
@@ -90,8 +258,15 @@ router.post("/", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Error creating work assignment:", error);
-    res.status(500).json({ error: "Failed to create work assignment" });
+    console.error("[WorkAssignment POST] Error creating work assignment:");
+    console.error("  Message:", error.message);
+    console.error("  Stack:", error.stack);
+    console.error("  Full error:", error);
+    res.status(500).json({
+      error: "Failed to create work assignment",
+      details: error.message,
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
   }
 });
 
@@ -192,6 +367,92 @@ router.get("/summary/labour/:labourId", async (req, res) => {
   } catch (error) {
     console.error("Error fetching labour summary:", error);
     res.status(500).json({ error: "Failed to fetch labour summary" });
+  }
+});
+
+// Get available items for an order (items not fully assigned)
+// This endpoint returns items with their remaining quantities for split assignments
+router.get("/available-items/:orderId", async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    // First, get the order to validate it exists
+    const order = await getRow(
+      "SELECT id, orderId, shirt, pant, noOfSets FROM orders WHERE id = ? OR orderId = ?",
+      [orderId, orderId],
+    );
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    // Define item types that can be assigned
+    const itemTypes = ["Shirt", "Pant", "Ironing", "Embroidery"];
+    const availableItems = [];
+
+    // For each potential item type, calculate remaining quantity
+    for (const itemType of itemTypes) {
+      // Try to get total quantity from order_items table first (preferred)
+      let totalQty = 0;
+
+      const orderItem = await getRow(
+        "SELECT total_qty FROM order_items WHERE order_id = ? AND item_type = ?",
+        [order.id, itemType],
+      );
+
+      if (orderItem) {
+        // Use quantity from order_items table if available
+        totalQty = orderItem.total_qty || 0;
+      } else {
+        // Fallback: Use noOfSets for all item types if order_items not populated
+        totalQty = order.noOfSets || 1;
+      }
+
+      // Get total assigned quantity for this item type (from work_assignments)
+      const assignmentResult = await getRow(
+        `SELECT SUM(quantity) as totalAssigned FROM work_assignments 
+         WHERE order_id = ? AND task_type = ?`,
+        [order.id, itemType],
+      );
+
+      const assignedQty = assignmentResult?.totalAssigned || 0;
+      const remainingQty = Math.max(0, totalQty - assignedQty);
+
+      // Only include items with remaining quantity > 0
+      if (totalQty > 0) {
+        availableItems.push({
+          itemType,
+          totalQty,
+          assignedQty,
+          remainingQty,
+          isFullyAssigned: remainingQty === 0,
+          displayLabel:
+            remainingQty > 0
+              ? `${itemType} (Remaining: ${remainingQty})`
+              : `${itemType} (FULL - ${totalQty}/${totalQty})`,
+        });
+      }
+    }
+
+    res.json({
+      orderId: order.orderId || order.id,
+      items: availableItems.filter((item) => item.totalQty > 0),
+      allItems: availableItems,
+      summary: {
+        totalItems: availableItems.length,
+        availableItems: availableItems.filter((item) => item.remainingQty > 0)
+          .length,
+        fullyAssignedItems: availableItems.filter(
+          (item) => item.isFullyAssigned,
+        ).length,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching available items:", error);
+    res.status(500).json({
+      error: "Failed to fetch available items",
+      details: error.message,
+    });
   }
 });
 

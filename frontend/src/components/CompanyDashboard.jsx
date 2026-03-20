@@ -104,27 +104,14 @@ const CompanyDashboard = () => {
     email: "",
   });
 
-  // Employee order form - Multi-step
-  const [orderStep, setOrderStep] = useState(1); // 1: Services, 2: Measurements, 3: Payment
-  const [selectedServices, setSelectedServices] = useState({
-    shirt: false,
-    pant: false,
-    embroidery: true, // Default checked for company
-  });
-  const [embroideryText, setEmbroideryText] = useState(
-    selectedCompany?.name ? `${selectedCompany.name} + logo` : "",
-  );
-
+  // Employee order form - Simplified (no multi-step, always includes shirt & pant)
   const [orderForm, setOrderForm] = useState({
     orderId: "",
     name: "",
-    phone: "",
     position: "Employee",
     noOfSets: 1,
-    shirtAmount: 500,
-    pantAmount: 400,
-    advanceAmount: 0,
-    paymentMethod: "Cash",
+    shirtAmount: 500, // Predefined price
+    pantAmount: 400, // Predefined price
     shirt: {
       length: "",
       shoulder: "",
@@ -150,7 +137,6 @@ const CompanyDashboard = () => {
     labourId: "",
     workType: "",
     quantity: 1,
-    customWage: "",
   });
 
   // Fetch companies
@@ -183,7 +169,7 @@ const CompanyDashboard = () => {
 
   useEffect(() => {
     if (selectedCompany) {
-      fetchEmployees(selectedCompany._id);
+      fetchEmployees(selectedCompany.id);
     }
   }, [selectedCompany, fetchEmployees]);
 
@@ -297,7 +283,7 @@ const CompanyDashboard = () => {
       await employeesAPI.updateStatus(employeeId, newStatus);
       setEmployees(
         employees.map((emp) =>
-          emp._id === employeeId ? { ...emp, status: newStatus } : emp,
+          emp.id === employeeId ? { ...emp, status: newStatus } : emp,
         ),
       );
     } catch (error) {
@@ -361,7 +347,7 @@ const CompanyDashboard = () => {
 
     setIsSubmitting(true);
     try {
-      await companiesAPI.delete(companyToDelete._id);
+      await companiesAPI.delete(companyToDelete.id);
       setShowDeleteModal(false);
       setCompanyToDelete(null);
       setDeleteConfirmText("");
@@ -412,21 +398,13 @@ const CompanyDashboard = () => {
 
   const handleCloseOrderModal = () => {
     setShowCreateOrderModal(false);
-    setOrderStep(1);
-    setSelectedServices({ shirt: false, pant: false, embroidery: true });
-    setEmbroideryText(
-      selectedCompany?.name ? `${selectedCompany.name} + logo` : "",
-    );
     setOrderForm({
       orderId: "",
       name: "",
-      phone: "",
       position: "Employee",
       noOfSets: 1,
       shirtAmount: 500,
       pantAmount: 400,
-      advanceAmount: 0,
-      paymentMethod: "Cash",
       shirt: {
         length: "",
         shoulder: "",
@@ -458,47 +436,26 @@ const CompanyDashboard = () => {
     setFormError("");
     setIsSubmitting(true);
 
-    if (!orderForm.name || !orderForm.phone) {
-      setFormError("Name and Phone are required");
-      setIsSubmitting(false);
-      return;
-    }
-
-    // Validation: At least one service must be selected
-    if (
-      !selectedServices.shirt &&
-      !selectedServices.pant &&
-      !selectedServices.embroidery
-    ) {
-      setFormError(
-        "Please select at least one service (Shirt, Pant, or Embroidery)",
-      );
-      setIsSubmitting(false);
-      return;
-    }
-
-    // Validation: If embroidery selected, text must be provided
-    if (selectedServices.embroidery && !embroideryText.trim()) {
-      setFormError("Please specify what to embroider");
+    if (!orderForm.name) {
+      setFormError("Name is required");
       setIsSubmitting(false);
       return;
     }
 
     try {
-      // Prepare order data - only include selected services
+      // Prepare order data - always include shirt and pant
       const orderData = {
         ...orderForm,
-        shirt: selectedServices.shirt ? orderForm.shirt : {},
-        pant: selectedServices.pant ? orderForm.pant : {},
-        embroidery: selectedServices.embroidery ? { text: embroideryText } : {},
-        companyId: selectedCompany._id,
+        shirt: orderForm.shirt,
+        pant: orderForm.pant,
+        companyId: selectedCompany.id,
       };
 
       await employeesAPI.create(orderData);
 
       // Reset form and close modal
       handleCloseOrderModal();
-      fetchEmployees(selectedCompany._id);
+      fetchEmployees(selectedCompany.id);
       setToast({ show: true, message: "Order Created", type: "success" });
     } catch (error) {
       setFormError(error.message || "Failed to create order");
@@ -530,7 +487,7 @@ const CompanyDashboard = () => {
   const fetchAssignedWorkTypes = async (order) => {
     try {
       const assignments = await workAssignmentsAPI.getByOrder(
-        order.orderId || order._id,
+        order.orderId || order.id,
       );
       const assignedWorkTypes = assignments.map((a) => a.workType);
 
@@ -570,6 +527,61 @@ const CompanyDashboard = () => {
     }
   };
 
+  // Filter work types based on selected labour's category AND order's checked services
+  const getFilteredWorkTypes = (labourId) => {
+    const selectedLabour = labourList.find((l) => l._id === labourId);
+    if (!selectedLabour || !availableWorkTypes || !selectedOrder) {
+      return [];
+    }
+
+    // First, get work types that labour can do based on category
+    let labourCapableTypes = [];
+    switch (selectedLabour.category) {
+      case "Tailor":
+        // Tailors can do Shirt and Pant work
+        labourCapableTypes = ["Shirt", "Pant"];
+        break;
+      case "Iron Master":
+        // Iron Master can do Ironing work
+        labourCapableTypes = ["Ironing"];
+        break;
+      case "Embroider":
+        // Embroider can do Embroidery work
+        labourCapableTypes = ["Embroidery"];
+        break;
+      default:
+        labourCapableTypes = availableWorkTypes;
+    }
+
+    // Second, filter by what services are actually ordered
+    let orderOrderedTypes = [];
+    if (selectedOrder.shirt && Object.keys(selectedOrder.shirt).length > 0) {
+      orderOrderedTypes.push("Shirt");
+    }
+    if (selectedOrder.pant && Object.keys(selectedOrder.pant).length > 0) {
+      orderOrderedTypes.push("Pant");
+    }
+    // For Ironing and Embroidery, show if labour is capable and it's their job
+    if (labourCapableTypes.includes("Ironing")) {
+      orderOrderedTypes.push("Ironing");
+    }
+    if (labourCapableTypes.includes("Embroidery")) {
+      orderOrderedTypes.push("Embroidery");
+    }
+
+    // Return only work types that are both (1) ordered AND (2) labour is capable of
+    return orderOrderedTypes.filter((wt) => labourCapableTypes.includes(wt));
+  };
+
+  // Update work type dropdown when labour is selected
+  const handleLabourChange = (labourId) => {
+    setAssignmentData({
+      ...assignmentData,
+      labourId: labourId,
+      workType: "", // Reset work type when labour changes
+    });
+  };
+
   // Open assignment modal
   const handleOpenAssignModal = async (order) => {
     setSelectedOrder(order);
@@ -577,7 +589,6 @@ const CompanyDashboard = () => {
       labourId: "",
       workType: "",
       quantity: 1,
-      customWage: "",
     });
     await fetchAssignedWorkTypes(order);
     await loadLabourList();
@@ -592,7 +603,6 @@ const CompanyDashboard = () => {
       labourId: "",
       workType: "",
       quantity: 1,
-      customWage: "",
     });
   };
 
@@ -621,14 +631,9 @@ const CompanyDashboard = () => {
 
       await workAssignmentsAPI.create({
         labourId: assignmentData.labourId,
-        orderId: selectedOrder.orderId || selectedOrder._id,
-        workType: assignmentData.workType,
+        orderId: selectedOrder.orderId || selectedOrder.id,
+        task_type: assignmentData.workType,
         quantity: parseInt(assignmentData.quantity),
-        customWage: assignmentData.customWage
-          ? parseFloat(assignmentData.customWage)
-          : null,
-        orderCustomerName: selectedOrder.name,
-        orderDate: selectedOrder.date || new Date().toISOString().split("T")[0],
       });
 
       setToast({
@@ -639,7 +644,7 @@ const CompanyDashboard = () => {
       handleCloseAssignModal();
 
       // Refresh the assignment data for this order
-      await fetchAssignedWorkTypes(selectedOrder.orderId || selectedOrder._id);
+      await fetchAssignedWorkTypes(selectedOrder.orderId || selectedOrder.id);
     } catch (error) {
       setToast({
         show: true,
@@ -696,7 +701,7 @@ const CompanyDashboard = () => {
               >
                 {companies.map((company) => (
                   <div
-                    key={company._id}
+                    key={company.id}
                     style={{
                       padding: "1.5rem",
                       backgroundColor: "#f8fafc",
@@ -1677,9 +1682,9 @@ const CompanyDashboard = () => {
                   </tr>
                 ) : (
                   displayOrders.map((order) => (
-                    <tr key={order._id}>
+                    <tr key={order.id}>
                       <td className="font-semibold">
-                        #{order.orderId || order._id?.toString().slice(-6)}
+                        #{order.orderId || order.id?.toString().slice(-6)}
                       </td>
                       <td>
                         <div
@@ -1763,10 +1768,7 @@ const CompanyDashboard = () => {
                         >
                           <button
                             onClick={() =>
-                              handleStatusChange(
-                                order._id,
-                                "Moved to Stitching",
-                              )
+                              handleStatusChange(order.id, "Moved to Stitching")
                             }
                             style={{
                               padding: "0.5rem 0.75rem",
@@ -1815,7 +1817,7 @@ const CompanyDashboard = () => {
                           </button>
                           <button
                             onClick={() =>
-                              handleStatusChange(order._id, "Pending")
+                              handleStatusChange(order.id, "Pending")
                             }
                             style={{
                               padding: "0.5rem 0.75rem",
@@ -1856,7 +1858,7 @@ const CompanyDashboard = () => {
                           </button>
                           <button
                             onClick={() =>
-                              handleStatusChange(order._id, "Completed")
+                              handleStatusChange(order.id, "Completed")
                             }
                             style={{
                               padding: "0.5rem 0.75rem",
@@ -1997,955 +1999,349 @@ const CompanyDashboard = () => {
                   </div>
                 )}
 
-                {/* Step Indicator */}
+                {/* Employee Customer Details */}
+                <h4
+                  style={{
+                    marginBottom: "1.5rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    fontSize: "1.1rem",
+                    fontWeight: "600",
+                  }}
+                >
+                  <Users size={20} />
+                  Employee Information
+                </h4>
                 <div
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    marginBottom: "2rem",
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, 1fr)",
                     gap: "1rem",
+                    marginBottom: "2rem",
+                  }}
+                >
+                  <div className="form-group">
+                    <label className="form-label">Order ID</label>
+                    <div
+                      style={{
+                        padding: "0.75rem 1rem",
+                        backgroundColor: "#f1f5f9",
+                        borderRadius: "8px",
+                        border: "1px solid #e2e8f0",
+                        color: "#1e3a8a",
+                        fontWeight: "600",
+                      }}
+                    >
+                      {orderForm.orderId || "Auto"}
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Position *</label>
+                    <select
+                      name="position"
+                      value={orderForm.position}
+                      onChange={handleOrderInputChange}
+                      className="form-select"
+                    >
+                      {Object.keys(POSITION_CONFIG).map((pos) => (
+                        <option key={pos} value={pos}>
+                          {POSITION_CONFIG[pos].label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Employee Name *</label>
+                    <input
+                      type="text"
+                      name="name"
+                      value={orderForm.name}
+                      onChange={handleOrderInputChange}
+                      className="form-input"
+                      placeholder="Enter employee name"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Shirt Measurements */}
+                <h4
+                  style={{
+                    marginBottom: "1.5rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    fontSize: "1.1rem",
+                    fontWeight: "600",
+                  }}
+                >
+                  <Shirt size={20} />
+                  Shirt Measurements (inches)
+                </h4>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, 1fr)",
+                    gap: "1rem",
+                    marginBottom: "2rem",
                   }}
                 >
                   {[
-                    { step: 1, label: "Services" },
-                    { step: 2, label: "Measurements" },
-                    { step: 3, label: "Payment" },
-                  ].map((item) => (
-                    <div
-                      key={item.step}
-                      style={{
-                        flex: 1,
-                        textAlign: "center",
-                      }}
-                    >
-                      <div
+                    "length",
+                    "shoulder",
+                    "sleeve",
+                    "chest",
+                    "collar",
+                    "waist",
+                  ].map((field) => (
+                    <div className="form-group" key={field}>
+                      <label
+                        className="form-label"
                         style={{
-                          width: "40px",
-                          height: "40px",
-                          margin: "0 auto 0.5rem",
-                          borderRadius: "50%",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontWeight: "600",
-                          color: "white",
-                          backgroundColor:
-                            orderStep >= item.step ? "#3b82f6" : "#cbd5e1",
-                          transition: "all 0.3s ease",
+                          textTransform: "capitalize",
+                          fontSize: "0.8rem",
                         }}
                       >
-                        {orderStep > item.step ? "✓" : item.step}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "0.875rem",
-                          color: orderStep >= item.step ? "#1e3a8a" : "#64748b",
-                          fontWeight: orderStep === item.step ? "600" : "400",
-                        }}
-                      >
-                        {item.label}
-                      </div>
+                        {field}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        name={field}
+                        value={orderForm.shirt[field]}
+                        onChange={handleShirtChange}
+                        className="form-input"
+                        placeholder="0"
+                      />
                     </div>
                   ))}
                 </div>
 
-                {/* STEP 1: Services Selection */}
-                {orderStep === 1 && (
-                  <div>
-                    <h4
-                      style={{
-                        marginBottom: "1.5rem",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        fontSize: "1.1rem",
-                        fontWeight: "600",
-                      }}
-                    >
-                      <ShoppingCart size={20} />
-                      What services does the employee need?
-                    </h4>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: "1.5rem",
-                      }}
-                    >
-                      {/* Shirt Checkbox */}
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          padding: "1.25rem",
-                          border: selectedServices.shirt
-                            ? "2px solid #3b82f6"
-                            : "2px solid #e2e8f0",
-                          borderRadius: "12px",
-                          cursor: "pointer",
-                          transition: "all 0.2s",
-                          backgroundColor: selectedServices.shirt
-                            ? "#eff6ff"
-                            : "#f8fafc",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = "#3b82f6";
-                          e.currentTarget.style.backgroundColor = "#eff6ff";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor =
-                            selectedServices.shirt ? "#3b82f6" : "#e2e8f0";
-                          e.currentTarget.style.backgroundColor =
-                            selectedServices.shirt ? "#eff6ff" : "#f8fafc";
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedServices.shirt}
-                          onChange={(e) =>
-                            setSelectedServices((prev) => ({
-                              ...prev,
-                              shirt: e.target.checked,
-                            }))
-                          }
+                {/* Pant Measurements */}
+                <h4
+                  style={{
+                    marginBottom: "1.5rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    fontSize: "1.1rem",
+                    fontWeight: "600",
+                  }}
+                >
+                  <PanelBottom size={20} />
+                  Pant Measurements (inches)
+                </h4>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, 1fr)",
+                    gap: "1rem",
+                    marginBottom: "2rem",
+                  }}
+                >
+                  {["length", "waist", "hip", "thigh", "knee", "bottom"].map(
+                    (field) => (
+                      <div className="form-group" key={field}>
+                        <label
+                          className="form-label"
                           style={{
-                            width: "20px",
-                            height: "20px",
-                            cursor: "pointer",
-                            marginRight: "1rem",
-                          }}
-                        />
-                        <div>
-                          <div
-                            style={{
-                              fontWeight: "600",
-                              color: "#1e3a8a",
-                              fontSize: "1rem",
-                            }}
-                          >
-                            <Shirt
-                              size={18}
-                              style={{
-                                display: "inline",
-                                marginRight: "0.5rem",
-                              }}
-                            />
-                            Shirt
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "0.75rem",
-                              color: "#64748b",
-                              marginTop: "0.25rem",
-                            }}
-                          >
-                            Length, shoulder, sleeve, chest, collar, waist
-                          </div>
-                        </div>
-                      </label>
-
-                      {/* Pant Checkbox */}
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          padding: "1.25rem",
-                          border: selectedServices.pant
-                            ? "2px solid #3b82f6"
-                            : "2px solid #e2e8f0",
-                          borderRadius: "12px",
-                          cursor: "pointer",
-                          transition: "all 0.2s",
-                          backgroundColor: selectedServices.pant
-                            ? "#eff6ff"
-                            : "#f8fafc",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = "#3b82f6";
-                          e.currentTarget.style.backgroundColor = "#eff6ff";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor =
-                            selectedServices.pant ? "#3b82f6" : "#e2e8f0";
-                          e.currentTarget.style.backgroundColor =
-                            selectedServices.pant ? "#eff6ff" : "#f8fafc";
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedServices.pant}
-                          onChange={(e) =>
-                            setSelectedServices((prev) => ({
-                              ...prev,
-                              pant: e.target.checked,
-                            }))
-                          }
-                          style={{
-                            width: "20px",
-                            height: "20px",
-                            cursor: "pointer",
-                            marginRight: "1rem",
-                          }}
-                        />
-                        <div>
-                          <div
-                            style={{
-                              fontWeight: "600",
-                              color: "#1e3a8a",
-                              fontSize: "1rem",
-                            }}
-                          >
-                            <PanelBottom
-                              size={18}
-                              style={{
-                                display: "inline",
-                                marginRight: "0.5rem",
-                              }}
-                            />
-                            Pant
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "0.75rem",
-                              color: "#64748b",
-                              marginTop: "0.25rem",
-                            }}
-                          >
-                            Length, waist, hip, thigh, knee, bottom
-                          </div>
-                        </div>
-                      </label>
-
-                      {/* Embroidery Checkbox - Pre-checked */}
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          padding: "1.25rem",
-                          border: selectedServices.embroidery
-                            ? "2px solid #3b82f6"
-                            : "2px solid #e2e8f0",
-                          borderRadius: "12px",
-                          cursor: "pointer",
-                          transition: "all 0.2s",
-                          backgroundColor: selectedServices.embroidery
-                            ? "#eff6ff"
-                            : "#f8fafc",
-                          gridColumn: "span 2",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = "#3b82f6";
-                          e.currentTarget.style.backgroundColor = "#eff6ff";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor =
-                            selectedServices.embroidery ? "#3b82f6" : "#e2e8f0";
-                          e.currentTarget.style.backgroundColor =
-                            selectedServices.embroidery ? "#eff6ff" : "#f8fafc";
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedServices.embroidery}
-                          onChange={(e) => {
-                            setSelectedServices((prev) => ({
-                              ...prev,
-                              embroidery: e.target.checked,
-                            }));
-                            if (!e.target.checked) {
-                              setEmbroideryText("");
-                            } else if (!embroideryText) {
-                              setEmbroideryText(
-                                selectedCompany?.name
-                                  ? `${selectedCompany.name} + logo`
-                                  : "",
-                              );
-                            }
-                          }}
-                          style={{
-                            width: "20px",
-                            height: "20px",
-                            cursor: "pointer",
-                            marginRight: "1rem",
-                          }}
-                        />
-                        <div>
-                          <div
-                            style={{
-                              fontWeight: "600",
-                              color: "#1e3a8a",
-                              fontSize: "1rem",
-                            }}
-                          >
-                            <Sparkles
-                              size={18}
-                              style={{
-                                display: "inline",
-                                marginRight: "0.5rem",
-                              }}
-                            />
-                            Embroidery (with Company Branding)
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "0.75rem",
-                              color: "#64748b",
-                              marginTop: "0.25rem",
-                            }}
-                          >
-                            Add company logo or employee name embroidery
-                          </div>
-                        </div>
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {/* STEP 2: Measurements & Employee Details */}
-                {orderStep === 2 && (
-                  <div>
-                    <h4
-                      style={{
-                        marginBottom: "1.5rem",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        fontSize: "1.1rem",
-                        fontWeight: "600",
-                      }}
-                    >
-                      <Ruler size={20} />
-                      Enter Measurements (in inches)
-                    </h4>
-
-                    {/* Employee Details for Step 2 */}
-                    <div style={{ marginBottom: "2rem" }}>
-                      <h5 style={{ marginBottom: "1rem", color: "#475569" }}>
-                        Employee Information
-                      </h5>
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(2, 1fr)",
-                          gap: "1rem",
-                        }}
-                      >
-                        <div className="form-group">
-                          <label className="form-label">Order ID</label>
-                          <div
-                            style={{
-                              padding: "0.75rem 1rem",
-                              backgroundColor: "#f1f5f9",
-                              borderRadius: "8px",
-                              border: "1px solid #e2e8f0",
-                              color: "#1e3a8a",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {orderForm.orderId || "Auto"}
-                          </div>
-                        </div>
-                        <div className="form-group">
-                          <label className="form-label">Position *</label>
-                          <select
-                            name="position"
-                            value={orderForm.position}
-                            onChange={handleOrderInputChange}
-                            className="form-select"
-                          >
-                            {Object.keys(POSITION_CONFIG).map((pos) => (
-                              <option key={pos} value={pos}>
-                                {POSITION_CONFIG[pos].label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="form-group">
-                          <label className="form-label">Employee Name *</label>
-                          <input
-                            type="text"
-                            name="name"
-                            value={orderForm.name}
-                            onChange={handleOrderInputChange}
-                            className="form-input"
-                            placeholder="Enter employee name"
-                            required
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label className="form-label">Phone Number *</label>
-                          <input
-                            type="tel"
-                            name="phone"
-                            value={orderForm.phone}
-                            onChange={handleOrderInputChange}
-                            className="form-input"
-                            placeholder="Enter phone number"
-                            required
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Shirt Measurements */}
-                    {selectedServices.shirt && (
-                      <div style={{ marginBottom: "2rem" }}>
-                        <h5
-                          style={{
-                            marginBottom: "1rem",
-                            color: "#475569",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.5rem",
+                            textTransform: "capitalize",
+                            fontSize: "0.8rem",
                           }}
                         >
-                          <Shirt size={16} />
-                          Shirt Measurements
-                        </h5>
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(3, 1fr)",
-                            gap: "1rem",
-                          }}
-                        >
-                          {[
-                            "length",
-                            "shoulder",
-                            "sleeve",
-                            "chest",
-                            "collar",
-                            "waist",
-                          ].map((field) => (
-                            <div className="form-group" key={field}>
-                              <label
-                                className="form-label"
-                                style={{
-                                  textTransform: "capitalize",
-                                  fontSize: "0.8rem",
-                                }}
-                              >
-                                {field}
-                              </label>
-                              <input
-                                type="number"
-                                step="0.5"
-                                name={field}
-                                value={orderForm.shirt[field]}
-                                onChange={handleShirtChange}
-                                className="form-input"
-                                placeholder="0"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Pant Measurements */}
-                    {selectedServices.pant && (
-                      <div style={{ marginBottom: "2rem" }}>
-                        <h5
-                          style={{
-                            marginBottom: "1rem",
-                            color: "#475569",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.5rem",
-                          }}
-                        >
-                          <PanelBottom size={16} />
-                          Pant Measurements
-                        </h5>
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(3, 1fr)",
-                            gap: "1rem",
-                          }}
-                        >
-                          {[
-                            "length",
-                            "waist",
-                            "hip",
-                            "thigh",
-                            "knee",
-                            "bottom",
-                          ].map((field) => (
-                            <div className="form-group" key={field}>
-                              <label
-                                className="form-label"
-                                style={{
-                                  textTransform: "capitalize",
-                                  fontSize: "0.8rem",
-                                }}
-                              >
-                                {field}
-                              </label>
-                              <input
-                                type="number"
-                                step="0.5"
-                                name={field}
-                                value={orderForm.pant[field]}
-                                onChange={handlePantChange}
-                                className="form-input"
-                                placeholder="0"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Embroidery Design Text */}
-                    {selectedServices.embroidery && (
-                      <div>
-                        <h5
-                          style={{
-                            marginBottom: "1rem",
-                            color: "#475569",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.5rem",
-                          }}
-                        >
-                          <Sparkles size={16} />
-                          Company Branding
-                        </h5>
-                        <div className="form-group">
-                          <label className="form-label">
-                            Embroidery Text *
-                          </label>
-                          <textarea
-                            value={embroideryText}
-                            onChange={(e) => setEmbroideryText(e.target.value)}
-                            className="form-input"
-                            placeholder={`Default: ${selectedCompany?.name} + logo`}
-                            rows="3"
-                            style={{
-                              resize: "vertical",
-                              fontFamily: "inherit",
-                            }}
-                          />
-                          <small
-                            style={{
-                              color: "#64748b",
-                              marginTop: "0.25rem",
-                              display: "block",
-                            }}
-                          >
-                            Current default: "{selectedCompany?.name} + logo"
-                          </small>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* STEP 3: Payment Details */}
-                {orderStep === 3 && (
-                  <div>
-                    <h4
-                      style={{
-                        marginBottom: "1.5rem",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        fontSize: "1.1rem",
-                        fontWeight: "600",
-                      }}
-                    >
-                      <IndianRupee size={20} />
-                      Payment & Order Summary
-                    </h4>
-
-                    {/* Order Summary */}
-                    <div
-                      style={{
-                        padding: "1.25rem",
-                        backgroundColor: "#f0fdf4",
-                        border: "1px solid #86efac",
-                        borderRadius: "12px",
-                        marginBottom: "1.5rem",
-                      }}
-                    >
-                      <h5
-                        style={{
-                          marginBottom: "1rem",
-                          color: "#15803d",
-                          fontWeight: "600",
-                        }}
-                      >
-                        Services Selected:
-                      </h5>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "1.5rem",
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        {selectedServices.shirt && (
-                          <div
-                            style={{
-                              padding: "0.75rem",
-                              backgroundColor: "white",
-                              borderRadius: "8px",
-                              border: "1px solid #86efac",
-                              flex: "1 1 auto",
-                              minWidth: "150px",
-                            }}
-                          >
-                            <div
-                              style={{
-                                color: "#15803d",
-                                fontWeight: "600",
-                                marginBottom: "0.25rem",
-                              }}
-                            >
-                              ✓ Shirt
-                            </div>
-                            <div
-                              style={{
-                                fontSize: "0.75rem",
-                                color: "#4b5563",
-                              }}
-                            >
-                              ₹{orderForm.shirtAmount}/set
-                            </div>
-                          </div>
-                        )}
-                        {selectedServices.pant && (
-                          <div
-                            style={{
-                              padding: "0.75rem",
-                              backgroundColor: "white",
-                              borderRadius: "8px",
-                              border: "1px solid #86efac",
-                              flex: "1 1 auto",
-                              minWidth: "150px",
-                            }}
-                          >
-                            <div
-                              style={{
-                                color: "#15803d",
-                                fontWeight: "600",
-                                marginBottom: "0.25rem",
-                              }}
-                            >
-                              ✓ Pant
-                            </div>
-                            <div
-                              style={{
-                                fontSize: "0.75rem",
-                                color: "#4b5563",
-                              }}
-                            >
-                              ₹{orderForm.pantAmount}/set
-                            </div>
-                          </div>
-                        )}
-                        {selectedServices.embroidery && (
-                          <div
-                            style={{
-                              padding: "0.75rem",
-                              backgroundColor: "white",
-                              borderRadius: "8px",
-                              border: "1px solid #86efac",
-                              flex: "1 1 auto",
-                              minWidth: "150px",
-                            }}
-                          >
-                            <div
-                              style={{
-                                color: "#15803d",
-                                fontWeight: "600",
-                                marginBottom: "0.25rem",
-                              }}
-                            >
-                              ✓ Embroidery
-                            </div>
-                            <div
-                              style={{
-                                fontSize: "0.75rem",
-                                color: "#4b5563",
-                                fontStyle: "italic",
-                              }}
-                            >
-                              {embroideryText}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Payment Details Form */}
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(2, 1fr)",
-                        gap: "1rem",
-                        marginBottom: "1.5rem",
-                      }}
-                    >
-                      <div className="form-group">
-                        <label className="form-label">Number of Sets</label>
+                          {field}
+                        </label>
                         <input
                           type="number"
-                          name="noOfSets"
-                          value={orderForm.noOfSets}
-                          onChange={handleOrderInputChange}
+                          step="0.5"
+                          name={field}
+                          value={orderForm.pant[field]}
+                          onChange={handlePantChange}
                           className="form-input"
-                          min="1"
-                          placeholder="1"
+                          placeholder="0"
                         />
                       </div>
-                      {selectedServices.shirt && (
-                        <div className="form-group">
-                          <label className="form-label">Shirt Amount (₹)</label>
-                          <input
-                            type="number"
-                            name="shirtAmount"
-                            value={orderForm.shirtAmount}
-                            onChange={handleOrderInputChange}
-                            className="form-input"
-                            min="0"
-                            placeholder="500"
-                          />
-                        </div>
-                      )}
-                      {selectedServices.pant && (
-                        <div className="form-group">
-                          <label className="form-label">Pant Amount (₹)</label>
-                          <input
-                            type="number"
-                            name="pantAmount"
-                            value={orderForm.pantAmount}
-                            onChange={handleOrderInputChange}
-                            className="form-input"
-                            min="0"
-                            placeholder="400"
-                          />
-                        </div>
-                      )}
-                      <div className="form-group">
-                        <label className="form-label">Payment Method</label>
-                        <select
-                          name="paymentMethod"
-                          value={orderForm.paymentMethod}
-                          onChange={handleOrderInputChange}
-                          className="form-select"
-                        >
-                          <option value="Cash">Cash</option>
-                          <option value="UPI">UPI</option>
-                        </select>
-                      </div>
-                    </div>
+                    ),
+                  )}
+                </div>
 
-                    {/* Advance Payment */}
+                {/* Order Details & Pricing */}
+                <h4
+                  style={{
+                    marginBottom: "1.5rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    fontSize: "1.1rem",
+                    fontWeight: "600",
+                  }}
+                >
+                  <IndianRupee size={20} />
+                  Order Details & Pricing
+                </h4>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, 1fr)",
+                    gap: "1rem",
+                    marginBottom: "2rem",
+                  }}
+                >
+                  <div className="form-group">
+                    <label className="form-label">Number of Sets</label>
+                    <input
+                      type="number"
+                      name="noOfSets"
+                      value={orderForm.noOfSets}
+                      onChange={handleOrderInputChange}
+                      className="form-input"
+                      min="1"
+                      placeholder="1"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Shirt Price (₹/set)</label>
+                    <input
+                      type="number"
+                      name="shirtAmount"
+                      value={orderForm.shirtAmount}
+                      onChange={handleOrderInputChange}
+                      className="form-input"
+                      min="0"
+                      placeholder="500"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Pant Price (₹/set)</label>
+                    <input
+                      type="number"
+                      name="pantAmount"
+                      value={orderForm.pantAmount}
+                      onChange={handleOrderInputChange}
+                      className="form-input"
+                      min="0"
+                      placeholder="400"
+                    />
+                  </div>
+                </div>
+
+                {/* Order Summary */}
+                <div
+                  style={{
+                    padding: "1.25rem",
+                    backgroundColor: "#f0fdf4",
+                    border: "2px solid #86efac",
+                    borderRadius: "12px",
+                    marginBottom: "1.5rem",
+                  }}
+                >
+                  <h5
+                    style={{
+                      marginBottom: "1rem",
+                      color: "#15803d",
+                      fontWeight: "600",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    <CheckCircle size={18} />
+                    Order Summary
+                  </h5>
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "0.75rem",
+                    }}
+                  >
                     <div
                       style={{
-                        padding: "1.25rem",
-                        backgroundColor: "#fef9c3",
-                        borderRadius: "12px",
-                        border: "1px solid #fde047",
-                        marginBottom: "1.5rem",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: "0.95rem",
                       }}
                     >
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: "1.5rem",
-                          alignItems: "center",
-                        }}
-                      >
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label
-                            className="form-label"
-                            style={{
-                              color: "#854d0e",
-                              fontWeight: "600",
-                            }}
-                          >
-                            Advance Amount (₹)
-                          </label>
-                          <input
-                            type="number"
-                            name="advanceAmount"
-                            value={orderForm.advanceAmount}
-                            onChange={handleOrderInputChange}
-                            className="form-input"
-                            min="0"
-                            max={calculateTotal()}
-                            placeholder="0"
-                            style={{
-                              backgroundColor: "white",
-                              fontSize: "1.1rem",
-                              fontWeight: "600",
-                            }}
-                          />
-                        </div>
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "1fr 1fr",
-                            gap: "1rem",
-                          }}
-                        >
-                          <div>
-                            <div
-                              style={{
-                                fontSize: "0.75rem",
-                                color: "#854d0e",
-                                marginBottom: "0.5rem",
-                              }}
-                            >
-                              Total Amount
-                            </div>
-                            <div
-                              style={{
-                                fontSize: "1.25rem",
-                                fontWeight: "600",
-                                color: "#854d0e",
-                              }}
-                            >
-                              ₹{calculateTotal().toLocaleString()}
-                            </div>
-                          </div>
-                          <div>
-                            <div
-                              style={{
-                                fontSize: "0.75rem",
-                                color: "#854d0e",
-                                marginBottom: "0.5rem",
-                              }}
-                            >
-                              Remaining
-                            </div>
-                            <div
-                              style={{
-                                fontSize: "1.25rem",
-                                fontWeight: "600",
-                                color: "#dc2626",
-                              }}
-                            >
-                              ₹{calculateRemainingAmount().toLocaleString()}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                      <span>Shirt:</span>
+                      <span>
+                        ₹{orderForm.shirtAmount} × {orderForm.noOfSets} set(s) =
+                        ₹
+                        {(
+                          orderForm.shirtAmount * orderForm.noOfSets
+                        ).toLocaleString()}
+                      </span>
                     </div>
-
-                    {/* Total Summary Box */}
                     <div
                       style={{
-                        padding: "1.5rem",
-                        backgroundColor: "#eff6ff",
-                        borderRadius: "12px",
-                        border: "2px solid #3b82f6",
-                        textAlign: "center",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: "0.95rem",
                       }}
                     >
-                      <div
-                        style={{
-                          fontSize: "0.875rem",
-                          color: "#1e3a8a",
-                          marginBottom: "0.5rem",
-                        }}
-                      >
-                        Order Total
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "2rem",
-                          fontWeight: "bold",
-                          color: "#1e3a8a",
-                        }}
-                      >
-                        ₹{calculateTotal().toLocaleString()}
-                      </div>
-                      {parseFloat(orderForm.advanceAmount) > 0 && (
-                        <div
-                          style={{
-                            fontSize: "0.75rem",
-                            color: "#16a34a",
-                            marginTop: "0.75rem",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: "0.25rem",
-                          }}
-                        >
-                          ✓ Advance paid: ₹
-                          {parseFloat(orderForm.advanceAmount).toLocaleString()}
-                        </div>
-                      )}
+                      <span>Pant:</span>
+                      <span>
+                        ₹{orderForm.pantAmount} × {orderForm.noOfSets} set(s) =
+                        ₹
+                        {(
+                          orderForm.pantAmount * orderForm.noOfSets
+                        ).toLocaleString()}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        borderTop: "1px solid #86efac",
+                        paddingTop: "0.75rem",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontWeight: "700",
+                        fontSize: "1.1rem",
+                        color: "#15803d",
+                      }}
+                    >
+                      <span>Total Order Value:</span>
+                      <span>
+                        ₹
+                        {(
+                          (orderForm.shirtAmount + orderForm.pantAmount) *
+                          orderForm.noOfSets
+                        ).toLocaleString()}
+                      </span>
                     </div>
                   </div>
-                )}
+                </div>
               </div>
 
-              {/* Modal Footer - Step Navigation */}
+              {/* Modal Footer - Simple Submit */}
               <div
                 style={{
                   padding: "1rem 1.5rem",
                   borderTop: "1px solid #e2e8f0",
                   display: "flex",
-                  justifyContent: "space-between",
+                  justifyContent: "flex-end",
                   gap: "1rem",
                 }}
               >
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  onClick={
-                    orderStep > 1
-                      ? () => setOrderStep(orderStep - 1)
-                      : handleCloseOrderModal
-                  }
+                  onClick={handleCloseOrderModal}
                   disabled={isSubmitting}
                 >
-                  {orderStep > 1 ? "← Back" : "Cancel"}
+                  Cancel
                 </button>
-
                 <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setOrderStep(orderStep + 1)}
-                  disabled={
-                    isSubmitting ||
-                    orderStep === 3 ||
-                    (orderStep === 1 &&
-                      !selectedServices.shirt &&
-                      !selectedServices.pant &&
-                      !selectedServices.embroidery)
-                  }
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={isSubmitting}
                   style={{
-                    display: orderStep === 3 ? "none" : "inline-flex",
+                    display: "flex",
                     alignItems: "center",
                     gap: "0.5rem",
                   }}
                 >
-                  Next →
+                  <Save size={18} />
+                  {isSubmitting ? "Creating..." : "Create Order"}
                 </button>
-
-                {orderStep === 3 && (
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={isSubmitting}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.5rem",
-                      marginLeft: "auto",
-                    }}
-                  >
-                    <Save size={18} />
-                    {isSubmitting ? "Creating..." : "Create Order"}
-                  </button>
-                )}
               </div>
             </form>
           </div>
@@ -3543,12 +2939,7 @@ const CompanyDashboard = () => {
                   <label className="form-label">Select Labour *</label>
                   <select
                     value={assignmentData.labourId}
-                    onChange={(e) =>
-                      setAssignmentData({
-                        ...assignmentData,
-                        labourId: e.target.value,
-                      })
-                    }
+                    onChange={(e) => handleLabourChange(e.target.value)}
                     className="form-input"
                     disabled={loadingLabour || isSubmitting}
                   >
@@ -3571,23 +2962,48 @@ const CompanyDashboard = () => {
                       marginBottom: "0.5rem",
                     }}
                   >
-                    Order includes:{" "}
-                    {selectedOrder?.shirt &&
-                    Object.keys(selectedOrder.shirt).length > 0
-                      ? "Shirt "
-                      : ""}
-                    {selectedOrder?.pant &&
-                    Object.keys(selectedOrder.pant).length > 0
-                      ? "Pant"
-                      : ""}
-                    {(!selectedOrder?.shirt ||
-                      Object.keys(selectedOrder.shirt).length === 0) &&
-                    (!selectedOrder?.pant ||
-                      Object.keys(selectedOrder.pant).length === 0)
-                      ? "None"
-                      : ""}
+                    {assignmentData.labourId ? (
+                      <>
+                        {
+                          labourList.find(
+                            (l) => l._id === assignmentData.labourId,
+                          )?.category
+                        }{" "}
+                        can do:{" "}
+                        {assignmentData.labourId === ""
+                          ? ""
+                          : labourList.find(
+                                (l) => l._id === assignmentData.labourId,
+                              )?.category === "Tailor"
+                            ? "Shirt, Pant"
+                            : labourList.find(
+                                  (l) => l._id === assignmentData.labourId,
+                                )?.category === "Iron Master"
+                              ? "Ironing"
+                              : "Embroidery"}
+                      </>
+                    ) : (
+                      <>
+                        Order includes:{" "}
+                        {selectedOrder?.shirt &&
+                        Object.keys(selectedOrder.shirt).length > 0
+                          ? "Shirt "
+                          : ""}
+                        {selectedOrder?.pant &&
+                        Object.keys(selectedOrder.pant).length > 0
+                          ? "Pant"
+                          : ""}
+                        {(!selectedOrder?.shirt ||
+                          Object.keys(selectedOrder.shirt).length === 0) &&
+                        (!selectedOrder?.pant ||
+                          Object.keys(selectedOrder.pant).length === 0)
+                          ? "None"
+                          : ""}
+                      </>
+                    )}
                   </div>
-                  {availableWorkTypes.length === 0 ? (
+                  {getFilteredWorkTypes(assignmentData.labourId).length ===
+                  0 ? (
                     <div
                       style={{
                         padding: "1rem",
@@ -3598,7 +3014,9 @@ const CompanyDashboard = () => {
                         textAlign: "center",
                       }}
                     >
-                      ✓ All work types have been assigned
+                      {assignmentData.labourId
+                        ? "✓ All applicable work types have been assigned"
+                        : "✓ All work types have been assigned"}
                     </div>
                   ) : (
                     <select
@@ -3613,13 +3031,17 @@ const CompanyDashboard = () => {
                       disabled={isSubmitting}
                     >
                       <option value="">
-                        Select work type ({availableWorkTypes.length} available)
+                        Select work type (
+                        {getFilteredWorkTypes(assignmentData.labourId).length}{" "}
+                        available)
                       </option>
-                      {availableWorkTypes.map((workType) => (
-                        <option key={workType} value={workType}>
-                          {workType}
-                        </option>
-                      ))}
+                      {getFilteredWorkTypes(assignmentData.labourId).map(
+                        (workType) => (
+                          <option key={workType} value={workType}>
+                            {workType}
+                          </option>
+                        ),
+                      )}
                     </select>
                   )}
                 </div>
@@ -3630,42 +3052,14 @@ const CompanyDashboard = () => {
                   <input
                     type="number"
                     min="1"
-                    value={assignmentData.quantity}
-                    onChange={(e) =>
+                    value={assignmentData.quantity || ""}
+                    onChange={(e) => {
+                      const val = e.target.value ? parseInt(e.target.value) : 1;
                       setAssignmentData({
                         ...assignmentData,
-                        quantity: parseInt(e.target.value),
-                      })
-                    }
-                    className="form-input"
-                    disabled={isSubmitting}
-                  />
-                </div>
-
-                {/* Custom Wage Override */}
-                <div style={{ marginBottom: "1rem" }}>
-                  <label className="form-label">Custom Wage (Optional)</label>
-                  <div
-                    style={{
-                      fontSize: "0.75rem",
-                      color: "#64748b",
-                      marginBottom: "0.5rem",
+                        quantity: isNaN(val) ? 1 : val,
+                      });
                     }}
-                  >
-                    Leave empty to use standard rates
-                  </div>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    placeholder="Enter custom wage per unit"
-                    value={assignmentData.customWage}
-                    onChange={(e) =>
-                      setAssignmentData({
-                        ...assignmentData,
-                        customWage: e.target.value,
-                      })
-                    }
                     className="form-input"
                     disabled={isSubmitting}
                   />
@@ -3695,7 +3089,11 @@ const CompanyDashboard = () => {
                   className="btn btn-primary"
                   disabled={
                     isSubmitting ||
-                    availableWorkTypes.length === 0 ||
+                    (assignmentData.labourId &&
+                      getFilteredWorkTypes(assignmentData.labourId).length ===
+                        0) ||
+                    (!assignmentData.labourId &&
+                      availableWorkTypes.length === 0) ||
                     !assignmentData.labourId ||
                     !assignmentData.workType ||
                     !assignmentData.quantity

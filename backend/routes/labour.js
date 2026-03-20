@@ -8,7 +8,12 @@ router.get("/", async (req, res) => {
     const labour = await runQuery(
       "SELECT * FROM labour ORDER BY createdAt DESC",
     );
-    res.json(labour);
+    // Convert id to _id for consistency with frontend
+    const formattedLabour = labour.map((l) => ({
+      ...l,
+      _id: l.id,
+    }));
+    res.json(formattedLabour);
   } catch (error) {
     console.error("Error fetching labour:", error);
     res.status(500).json({ error: "Failed to fetch labour" });
@@ -23,7 +28,12 @@ router.get("/category/:category", async (req, res) => {
       "SELECT * FROM labour WHERE category = ? ORDER BY createdAt DESC",
       [category],
     );
-    res.json(labour);
+    // Convert id to _id for consistency with frontend
+    const formattedLabour = labour.map((l) => ({
+      ...l,
+      _id: l.id,
+    }));
+    res.json(formattedLabour);
   } catch (error) {
     console.error("Error fetching labour by category:", error);
     res.status(500).json({ error: "Failed to fetch labour" });
@@ -39,7 +49,11 @@ router.get("/:id", async (req, res) => {
     if (!labour) {
       return res.status(404).json({ error: "Labour not found" });
     }
-    res.json(labour);
+    // Convert id to _id for consistency with frontend
+    res.json({
+      ...labour,
+      _id: labour.id,
+    });
   } catch (error) {
     console.error("Error fetching labour:", error);
     res.status(500).json({ error: "Failed to fetch labour" });
@@ -92,6 +106,7 @@ router.post("/", async (req, res) => {
       id: result.id,
       labour: {
         id: result.id,
+        _id: result.id,
         name,
         category,
         specialist,
@@ -148,8 +163,16 @@ router.put("/:id", async (req, res) => {
       return res.status(404).json({ error: "Labour not found" });
     }
 
+    // Fetch the updated labour record
+    const updatedLabour = await getRow("SELECT * FROM labour WHERE id = ?", [
+      req.params.id,
+    ]);
     res.json({
       message: "Labour updated successfully",
+      labour: {
+        ...updatedLabour,
+        _id: updatedLabour.id,
+      },
     });
   } catch (error) {
     console.error("Error updating labour:", error);
@@ -168,7 +191,10 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ error: "Labour not found" });
     }
 
-    res.json({ message: "Labour deleted successfully" });
+    res.json({
+      message: "Labour deleted successfully",
+      deletedId: req.params.id,
+    });
   } catch (error) {
     console.error("Error deleting labour:", error);
     res.status(500).json({ error: "Failed to delete labour" });
