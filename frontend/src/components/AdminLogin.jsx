@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { ArrowLeft, Lock, Mail, Loader } from "lucide-react";
 import ForgotPassword from "./ForgotPassword";
 
-const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE_URL = "/api";
 
 function AdminLogin({ onLoginSuccess, onBack }) {
   const [email, setEmail] = useState("");

@@ -258,7 +258,7 @@ const initializeTables = () => {
 // Migration: Add missing columns to existing tables
 const addMissingColumns = () => {
   return new Promise((resolve) => {
-    // Get the current columns of the employees table
+    // 1) First migrate employees table
     db.all(`PRAGMA table_info(employees)`, (err, columns) => {
       if (err) {
         console.error("❌ Error checking table columns:", err);
@@ -292,7 +292,7 @@ const addMissingColumns = () => {
               }
               pendingAlters--;
               if (pendingAlters === 0) {
-                resolve();
+                checkWorkAssignments();
               }
             },
           );
@@ -300,10 +300,45 @@ const addMissingColumns = () => {
       });
 
       if (pendingAlters === 0) {
-        console.log("✅ All required columns already exist");
-        resolve();
+        console.log("✅ All required columns in employees already exist");
+        checkWorkAssignments();
       }
     });
+
+    // 2) Then migrate work_assignments table
+    function checkWorkAssignments() {
+      db.all(`PRAGMA table_info(work_assignments)`, (err, columns) => {
+        if (err) {
+          console.error("❌ Error checking work_assignments columns:", err);
+          resolve();
+          return;
+        }
+
+        const existingColumns = columns.map((col) => col.name);
+
+        if (!existingColumns.includes("employee_id")) {
+          console.log(
+            `📝 Adding missing column: employee_id to work_assignments`,
+          );
+          db.run(
+            `ALTER TABLE work_assignments ADD COLUMN employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL`,
+            (err) => {
+              if (err) {
+                console.error(`❌ Error adding column employee_id:`, err);
+              } else {
+                console.log(`✅ Added column employee_id to work_assignments`);
+              }
+              resolve();
+            },
+          );
+        } else {
+          console.log(
+            "✅ All required columns in work_assignments already exist",
+          );
+          resolve();
+        }
+      });
+    }
   });
 };
 

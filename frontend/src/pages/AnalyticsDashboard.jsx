@@ -12,6 +12,7 @@ import KPICard from "../components/Analytics/KPICard";
 import RevenueChart from "../components/Analytics/RevenueChart";
 import DressTypePieChart from "../components/Analytics/DressTypePieChart";
 import OrdersTrendChart from "../components/Analytics/OrdersTrendChart";
+import CustomerOrdersChart from "../components/Analytics/CustomerOrdersChart";
 import TailorBarChart from "../components/Analytics/TailorBarChart";
 import OrdersAnalyticsTable from "../components/Analytics/OrdersAnalyticsTable";
 
@@ -331,192 +332,213 @@ const AnalyticsDashboard = () => {
     const fetchAnalyticsData = async () => {
       setIsLoading(true);
       try {
-        // Fetch all orders from API
-        const ordersResponse = await fetch("http://localhost:5000/api/orders");
-        if (!ordersResponse.ok) throw new Error("Failed to fetch orders");
-        const orders = await ordersResponse.json();
+        // Build date range parameters
+        let startDate = "";
+        let endDate = new Date().toISOString().split("T")[0];
 
-        // Filter orders based on date range
-        let filteredOrders;
         if (dateRange === "custom" && customDateStart && customDateEnd) {
-          const startDate = new Date(customDateStart);
-          const endDate = new Date(customDateEnd);
-          filteredOrders = orders.filter((order) => {
-            // Use date field (YYYY-MM-DD) or createdAt as fallback
-            let orderDate;
-            if (order.date) {
-              orderDate = new Date(order.date);
-            } else if (order.createdAt) {
-              orderDate = new Date(order.createdAt);
-            } else if (order.orderDate) {
-              orderDate = new Date(order.orderDate);
-            } else {
-              return false;
-            }
-            return orderDate >= startDate && orderDate <= endDate;
-          });
-        } else {
-          filteredOrders = filterOrdersByDateRange(orders, dateRange);
-        }
+          startDate = customDateStart;
+          endDate = customDateEnd;
+        } else if (dateRange !== "today") {
+          const now = new Date();
+          const start = new Date();
 
-        // Further filter by dress type, tailor, and status
-        const finalFilteredOrders = filteredOrders.filter((order) => {
-          const tailor = order.tailor || "Not Assigned";
-
-          // Determine dress type from shirt/pant objects
-          let dressType = "Custom Order";
-          const hasShirt =
-            order.shirt &&
-            typeof order.shirt === "object" &&
-            Object.keys(order.shirt).length > 0;
-          const hasPant =
-            order.pant &&
-            typeof order.pant === "object" &&
-            Object.keys(order.pant).length > 0;
-
-          if (hasShirt && hasPant) {
-            dressType = "Shirt & Pant";
-          } else if (hasShirt) {
-            dressType = "Shirt";
-          } else if (hasPant) {
-            dressType = "Pant";
+          switch (dateRange) {
+            case "7days":
+              start.setDate(now.getDate() - 7);
+              break;
+            case "30days":
+              start.setDate(now.getDate() - 30);
+              break;
+            case "90days":
+              start.setDate(now.getDate() - 90);
+              break;
+            default:
+              start.setDate(now.getDate() - 30);
           }
 
-          const isDressTypeMatch =
-            dressTypeFilter === "all" ||
-            (dressType &&
-              dressType.toLowerCase() === dressTypeFilter.toLowerCase());
-          const isTailorMatch =
-            tailorFilter === "all" ||
-            (tailor && tailor.toLowerCase() === tailorFilter.toLowerCase());
-          const isOrderStatusMatch =
-            orderStatusFilter === "all" ||
-            (order.status &&
-              order.status.toLowerCase() === orderStatusFilter.toLowerCase());
-          return isDressTypeMatch && isTailorMatch && isOrderStatusMatch;
+          startDate = start.toISOString().split("T")[0];
+        }
+
+        // Fetch from analytics endpoints
+        const [
+          dressTypeResponse,
+          tailorProductivityResponse,
+          labourWorkloadResponse,
+          ordersSummaryResponse,
+          kpiResponse,
+          monthlyRevenueResponse,
+          customerOrdersResponse,
+        ] = await Promise.all([
+          fetch(
+            `/api/analytics/orders-by-type?startDate=${startDate}&endDate=${endDate}`,
+          ),
+          fetch(
+            `/api/analytics/labour-productivity?startDate=${startDate}&endDate=${endDate}`,
+          ),
+          fetch(
+            `/api/analytics/labour-workload?startDate=${startDate}&endDate=${endDate}`,
+          ),
+          fetch(
+            `/api/analytics/orders-summary?startDate=${startDate}&endDate=${endDate}&limit=50`,
+          ),
+          fetch(`/api/analytics/kpi?startDate=${startDate}&endDate=${endDate}`),
+          fetch(`/api/analytics/monthly-revenue`),
+          fetch(
+            `/api/analytics/customer-orders?startDate=${startDate}&endDate=${endDate}`,
+          ),
+        ]);
+
+        // Check all responses
+        if (
+          !dressTypeResponse.ok ||
+          !tailorProductivityResponse.ok ||
+          !labourWorkloadResponse.ok ||
+          !ordersSummaryResponse.ok ||
+          !kpiResponse.ok ||
+          !monthlyRevenueResponse.ok ||
+          !customerOrdersResponse.ok
+        ) {
+          throw new Error("Failed to fetch one or more analytics endpoints");
+        }
+
+        const dressTypeData = await dressTypeResponse.json();
+        const tailorProductivityData = await tailorProductivityResponse.json();
+        const labourWorkloadData = await labourWorkloadResponse.json();
+        const ordersSummaryData = await ordersSummaryResponse.json();
+        const kpiData_raw = await kpiResponse.json();
+        const monthlyRevenueData = await monthlyRevenueResponse.json();
+        const customerOrdersData = await customerOrdersResponse.json();
+
+        // Format dress type data for the pie chart
+        const dressTypesChartData = dressTypeData.map((item) => ({
+          name: item.item_type,
+          value: item.total || 0,
+        }));
+
+        // Format tailor productivity/workload data for the bar chart
+        // We'll combine completed and assigned work
+        const tailorMap = {};
+        tailorProductivityData.forEach((item) => {
+          tailorMap[item.labour_id] = {
+            id: item.labour_id,
+            tailor: item.labour_name || `Labour ${item.labour_id}`,
+            completed: item.total_completed || 0,
+            assigned: 0,
+          };
         });
 
-        // Calculate KPIs
-        const totalOrders = filteredOrders.length;
-        const revenue = filteredOrders.reduce(
-          (sum, order) => sum + (order.orderPrice || order.price || 0),
-          0,
-        );
-        const uniqueCustomers = new Set(
-          filteredOrders.map((order) => order.customerName),
-        ).size;
-        const pendingOrders = filteredOrders.filter(
-          (order) =>
-            order.status === "Pending" || order.status === "In Progress",
-        ).length;
+        labourWorkloadData.forEach((item) => {
+          if (!tailorMap[item.labour_id]) {
+            tailorMap[item.labour_id] = {
+              id: item.labour_id,
+              tailor: item.labour_name || `Labour ${item.labour_id}`,
+              completed: 0,
+              assigned: 0,
+            };
+          }
+          tailorMap[item.labour_id].assigned = item.total_assigned || 0;
+        });
 
-        // Calculate growth (comparing with previous period)
-        const previousPeriodOrders = filterOrdersByDateRange(
-          orders,
-          getPreviousDateRange(dateRange),
-        );
-        const previousRevenue = previousPeriodOrders.reduce(
-          (sum, order) => sum + (order.orderPrice || order.price || 0),
-          0,
-        );
-        const previousCustomers = new Set(
-          previousPeriodOrders.map((order) => order.customerName),
-        ).size;
-        const previousPending = previousPeriodOrders.filter(
-          (order) =>
-            order.status === "Pending" || order.status === "In Progress",
-        ).length;
+        const tailorChartData = Object.values(tailorMap)
+          .sort((a, b) => b.completed - a.completed)
+          .slice(0, 8);
 
-        const revenueGrowth =
-          previousRevenue > 0
-            ? Math.round(((revenue - previousRevenue) / previousRevenue) * 100)
-            : 0;
-        const customerGrowth =
-          previousCustomers > 0
-            ? Math.round(
-                ((uniqueCustomers - previousCustomers) / previousCustomers) *
-                  100,
-              )
-            : 0;
-        const ordersGrowth =
-          previousPeriodOrders.length > 0
-            ? Math.round(
-                ((totalOrders - previousPeriodOrders.length) /
-                  previousPeriodOrders.length) *
-                  100,
-              )
-            : 0;
-        const pendingGrowth =
-          previousPending > 0
-            ? Math.round(
-                ((pendingOrders - previousPending) / previousPending) * 100,
-              )
-            : 0;
+        // Format orders summary data for the table
+        const normalizedRecentOrders = ordersSummaryData.map((order) => ({
+          _id: order.id,
+          id: order.id,
+          orderId: order.orderId || "N/A",
+          customerName: order.customerName || "Unknown",
+          dressType: order.dressType || "Other",
+          tailor: order.tailor || "Not Assigned",
+          price: order.price || 0,
+          status: order.status || "Pending",
+          deliveryDate: order.deliveryDate || "",
+        }));
 
+        // Format customer orders data for the chart
+        const customerOrdersChartData = customerOrdersData
+          .slice(0, 10)
+          .map((item) => ({
+            customerName: item.customer_name || item.customerName || "Unknown",
+            totalOrders: item.total_orders || item.totalOrders || 0,
+          }));
+
+        // Process monthly revenue data
+        const months = [
+          "Jan",
+          "Feb",
+          "Mar",
+          "Apr",
+          "May",
+          "Jun",
+          "Jul",
+          "Aug",
+          "Sep",
+          "Oct",
+          "Nov",
+          "Dec",
+        ];
+
+        // Initialize all months to 0
+        const monthlyRevenueMap = {};
+        months.forEach((m) => (monthlyRevenueMap[m] = 0));
+
+        // Fill up existing data
+        monthlyRevenueData.forEach((item) => {
+          if (item.month) {
+            const [year, month] = item.month.split("-");
+            const monthIndex = parseInt(month) - 1;
+            if (monthIndex >= 0 && monthIndex < 12) {
+              monthlyRevenueMap[months[monthIndex]] = item.revenue || 0;
+            }
+          }
+        });
+
+        const monthlyRevenueChartData = months.map((m) => ({
+          month: m,
+          revenue: monthlyRevenueMap[m],
+        }));
+
+        // Set KPI data
         setKpiData({
-          totalOrders: { value: totalOrders, growth: ordersGrowth },
+          totalOrders: { value: kpiData_raw.totalOrders, growth: 0 },
           revenue: {
-            value: `₹${revenue.toLocaleString()}`,
-            growth: revenueGrowth,
+            value: `₹${kpiData_raw.totalRevenue.toLocaleString()}`,
+            growth: 0,
           },
-          activeCustomers: { value: uniqueCustomers, growth: customerGrowth },
-          pendingOrders: { value: pendingOrders, growth: pendingGrowth },
+          activeCustomers: { value: kpiData_raw.activeCustomers, growth: 0 },
+          pendingOrders: { value: kpiData_raw.pendingOrders, growth: 0 },
         });
 
-        // Process chart data
-        const ordersTrendData = processOrdersTrend(finalFilteredOrders);
-        const monthlyRevenueData = processMonthlyRevenue(filteredOrders);
-        const dressTypesData = processDressTypes(filteredOrders);
-        const tailorProductivityData =
-          processTailorProductivity(filteredOrders);
-
-        // Extract unique tailors and dress types from the data
-        const uniqueTailors = [
-          ...new Set(
-            filteredOrders.map((order) => order.tailor || "Not Assigned"),
-          ),
-        ].sort();
-
-        // Extract unique dress types by checking shirt/pant objects
-        const uniqueDressTypes = [
-          ...new Set(
-            filteredOrders.map((order) => {
-              const hasShirt =
-                order.shirt &&
-                typeof order.shirt === "object" &&
-                Object.keys(order.shirt).length > 0;
-              const hasPant =
-                order.pant &&
-                typeof order.pant === "object" &&
-                Object.keys(order.pant).length > 0;
-
-              if (hasShirt && hasPant) {
-                return "Shirt & Pant";
-              } else if (hasShirt) {
-                return "Shirt";
-              } else if (hasPant) {
-                return "Pant";
-              } else {
-                return "Custom Order";
-              }
-            }),
-          ),
-        ].sort();
+        // Extract unique tailors and dress types
+        const allTailorsSet = new Set();
+        tailorProductivityData.forEach((item) => {
+          if (item.labour_name && item.labour_name.trim() !== "") {
+            allTailorsSet.add(item.labour_name);
+          }
+        });
+        labourWorkloadData.forEach((item) => {
+          if (item.labour_name && item.labour_name.trim() !== "") {
+            allTailorsSet.add(item.labour_name);
+          }
+        });
+        const uniqueTailors = Array.from(allTailorsSet);
+        const uniqueDressTypes = dressTypeData.map(
+          (item) => item.item_type || "Unknown",
+        );
 
         setTailorOptions(uniqueTailors);
         setDressTypeOptions(uniqueDressTypes);
 
-        // Normalize orders data for the table
-        const normalizedRecentOrders = finalFilteredOrders
-          .slice(0, 50)
-          .map(normalizeOrderData);
-
+        // Set chart data
         setChartData({
-          ordersTrend: ordersTrendData,
-          monthlyRevenue: monthlyRevenueData,
-          dressTypes: dressTypesData,
-          tailorProductivity: tailorProductivityData,
-          recentOrders: normalizedRecentOrders, // Normalized data for table
+          customerOrders: customerOrdersChartData, // Customer Data
+          monthlyRevenue: monthlyRevenueChartData,
+          dressTypes: dressTypesChartData,
+          tailorProductivity: tailorChartData,
+          recentOrders: normalizedRecentOrders,
         });
 
         setIsLoading(false);
@@ -527,14 +549,7 @@ const AnalyticsDashboard = () => {
     };
 
     fetchAnalyticsData();
-  }, [
-    dateRange,
-    customDateStart,
-    customDateEnd,
-    dressTypeFilter,
-    tailorFilter,
-    orderStatusFilter,
-  ]);
+  }, [dateRange, customDateStart, customDateEnd]);
 
   const handleExportReport = () => {
     // Generate CSV or PDF report
@@ -755,7 +770,10 @@ const AnalyticsDashboard = () => {
 
       {/* Charts Section - Second Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <OrdersTrendChart data={chartData.ordersTrend} isLoading={isLoading} />
+        <CustomerOrdersChart
+          data={chartData.customerOrders}
+          isLoading={isLoading}
+        />
         <TailorBarChart
           data={chartData.tailorProductivity}
           isLoading={isLoading}

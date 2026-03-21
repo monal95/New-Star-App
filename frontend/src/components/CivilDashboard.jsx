@@ -515,7 +515,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
 
   // Filter work types based on selected labour's category AND order's checked services
   const getFilteredWorkTypes = (labourId) => {
-    const selectedLabour = labourList.find((l) => l._id === labourId);
+    const selectedLabour = labourList.find((l) => String(l.id) === String(labourId));
     if (!selectedLabour || !selectedOrder) {
       return [];
     }
@@ -526,8 +526,8 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
       "Order services:",
       {
         shirt:
-          selectedOrder.shirt && Object.keys(selectedOrder.shirt).length > 0,
-        pant: selectedOrder.pant && Object.keys(selectedOrder.pant).length > 0,
+          (selectedOrder.shirt && selectedOrder.shirt !== '{}' && selectedOrder.shirt !== 'null'),
+        pant: (selectedOrder.pant && selectedOrder.pant !== '{}' && selectedOrder.pant !== 'null'),
         embroidery: selectedOrder.embroidery,
       },
     );
@@ -551,24 +551,17 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
         labourCapableTypes = ["Shirt", "Pant", "Ironing", "Embroidery"];
     }
 
-    // Step 2: Determine what services are actually ordered in this order
-    let orderedServices = [];
-    if (selectedOrder.shirt && Object.keys(selectedOrder.shirt).length > 0) {
-      orderedServices.push("Shirt");
-      orderedServices.push("Ironing"); // Ironing is available if shirt/pant ordered
-    }
-    if (selectedOrder.pant && Object.keys(selectedOrder.pant).length > 0) {
-      orderedServices.push("Pant");
-      orderedServices.push("Ironing"); // Ironing is available if shirt/pant ordered
-    }
-    if (selectedOrder.embroidery) {
-      orderedServices.push("Embroidery");
-    }
+    // Filter using availableWorkTypes from API which already checks remaining quantities
+      let filtered = availableWorkTypes.filter((wt) =>
+        labourCapableTypes.includes(wt)
+      );
 
-    // Step 3: Return INTERSECTION: work types labour can do AND are ordered
-    const filtered = orderedServices.filter((wt) =>
-      labourCapableTypes.includes(wt),
-    );
+    // Filter out work types that have 0 remaining quantity
+    filtered = filtered.filter((wt) => {
+      const itemInfo = itemDisplayMap[wt];
+      return itemInfo ? itemInfo.remainingQty > 0 : true; // if no itemInfo, assume available just in case
+    });
+
     // Remove duplicates
     const unique = [...new Set(filtered)];
 
@@ -664,12 +657,12 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
     try {
       setIsSubmitting(true);
       const selectedLabour = labourList.find(
-        (l) => l._id === assignmentData.labourId,
+        (l) => String(l.id) === String(assignmentData.labourId),
       );
 
       const assignmentPayload = {
         labourId: assignmentData.labourId,
-        orderId: selectedOrder.orderId || selectedOrder._id,
+        orderId: selectedOrder.id || selectedOrder.orderId || selectedOrder._id,
         task_type: assignmentData.workType,
         quantity: parseInt(assignmentData.quantity),
         customWage: assignmentData.customWage
@@ -2478,7 +2471,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                   >
                     <option value="">Choose a labour</option>
                     {labourList.map((labour) => (
-                      <option key={labour._id} value={labour._id}>
+                      <option key={labour.id} value={labour.id}>
                         {labour.name} ({labour.category})
                       </option>
                     ))}
@@ -2499,18 +2492,18 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                       <>
                         {
                           labourList.find(
-                            (l) => l._id === assignmentData.labourId,
+                            (l) => String(l.id) === String(assignmentData.labourId),
                           )?.category
                         }{" "}
                         can do:{" "}
                         {assignmentData.labourId === ""
                           ? ""
                           : labourList.find(
-                                (l) => l._id === assignmentData.labourId,
+                                (l) => String(l.id) === String(assignmentData.labourId),
                               )?.category === "Tailor"
                             ? "Shirt, Pant"
                             : labourList.find(
-                                  (l) => l._id === assignmentData.labourId,
+                                  (l) => String(l.id) === String(assignmentData.labourId),
                                 )?.category === "Iron Master"
                               ? "Ironing"
                               : "Embroidery"}
@@ -2526,10 +2519,8 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                         Object.keys(selectedOrder.pant).length > 0
                           ? "Pant"
                           : ""}
-                        {(!selectedOrder?.shirt ||
-                          Object.keys(selectedOrder.shirt).length === 0) &&
-                        (!selectedOrder?.pant ||
-                          Object.keys(selectedOrder.pant).length === 0)
+                        {(!selectedOrder?.shirt || selectedOrder.shirt === '{}' || selectedOrder.shirt === 'null') &&
+                        (!selectedOrder?.pant || selectedOrder.pant === '{}' || selectedOrder.pant === 'null')
                           ? "None"
                           : ""}
                       </>
@@ -2786,3 +2777,4 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
 };
 
 export default CivilDashboard;
+

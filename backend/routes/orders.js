@@ -242,6 +242,15 @@ router.post("/", async (req, res) => {
       ],
     );
 
+    const defaultQty = parseInt(noOfSets) || 1;
+    const itemTypes = ["Shirt", "Pant", "Ironing", "Embroidery"];
+    for (const t of itemTypes) {
+      await runQuery(
+        "INSERT INTO order_items (order_id, item_type, total_qty, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)",
+        [result.id, t, defaultQty, now, now],
+      );
+    }
+
     const newOrder = {
       id: result.id,
       orderId,

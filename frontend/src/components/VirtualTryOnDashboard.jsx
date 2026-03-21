@@ -27,7 +27,7 @@ import Toast from "./Toast";
  * - Toast notifications
  * - Download functionality
  */
-const FASHN_API_URL = "http://localhost:5000/api/fashn-proxy";
+const FASHN_API_URL = "/api/fashn-proxy";
 
 const VirtualTryOnDashboard = () => {
   // State Management

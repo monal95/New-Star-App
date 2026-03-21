@@ -1,0 +1,1 @@
+const sqlite3 = require('sqlite3'); const db = new sqlite3.Database('./database.db'); db.run('INSERT INTO orders (customerId, companyId, employeeId, dressType, noOfSets, status, invoiceNo, orderId) VALUES (1, 1, 1, \'Custom\', 5, \'Pending\', \'INV001\', \'ORD099\')', function(err) { console.log(this.lastID);});

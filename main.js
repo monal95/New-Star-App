@@ -226,39 +226,21 @@ function createWindow() {
 // Function to start the backend server
 function startBackend() {
   return new Promise((resolve, reject) => {
-    const backendPath = path.join(__dirname, "backend", "server.js");
+    try {
+      log("Starting backend server inside Electron process...");
+      // Require the backend server directly to run it in Electron's Node.js sandbox
+      // This avoids needing a global 'node' executable on the user's computer.
+      require(path.join(__dirname, "backend", "server.js"));
 
-    log("Starting backend server...");
-    backendProcess = spawn("node", [backendPath], {
-      stdio: "pipe", // Don't inherit stdio to avoid mixing output
-      shell: true,
-      env: {
-        ...process.env,
-        NODE_ENV: "production",
-      },
-    });
-
-    // Capture backend output for debugging
-    if (backendProcess.stdout) {
-      backendProcess.stdout.on("data", (data) => {
-        log("[Backend] " + data.toString().trim());
-      });
-    }
-    if (backendProcess.stderr) {
-      backendProcess.stderr.on("data", (data) => {
-        log("[Backend Error] " + data.toString().trim());
-      });
-    }
-
-    backendProcess.on("error", (error) => {
+      // Give backend time to start and connect to DB
+      setTimeout(() => {
+        log("Backend server started successfully.");
+        resolve();
+      }, 2000);
+    } catch (error) {
       log("Failed to start backend: " + error.toString());
       reject(error);
-    });
-
-    // Give backend time to start
-    setTimeout(() => {
-      resolve();
-    }, 2000);
+    }
   });
 }
 
@@ -290,12 +272,6 @@ app.on("window-all-closed", () => {
   if (frontendServer) {
     log("Closing frontend server...");
     frontendServer.close();
-  }
-
-  // Kill backend process
-  if (backendProcess) {
-    log("Killing backend process...");
-    backendProcess.kill("SIGTERM");
   }
 
   // Quit app (except on macOS where apps usually stay active)

@@ -486,39 +486,15 @@ const CompanyDashboard = () => {
   // Fetch already assigned work types and get available work types based on order
   const fetchAssignedWorkTypes = async (order) => {
     try {
-      const assignments = await workAssignmentsAPI.getByOrder(
-        order.orderId || order.id,
+      const response = await workAssignmentsAPI.getAvailableItems(
+        order.id || order.orderId || order._id,
       );
-      const assignedWorkTypes = assignments.map((a) => a.workType);
 
-      // Determine what work types the customer actually ordered
-      const orderedWorkTypes = [];
-
-      // Check if order has shirt
-      if (
-        order.shirt &&
-        typeof order.shirt === "object" &&
-        Object.keys(order.shirt).length > 0
-      ) {
-        orderedWorkTypes.push("Shirt");
-      }
-
-      // Check if order has pant
-      if (
-        order.pant &&
-        typeof order.pant === "object" &&
-        Object.keys(order.pant).length > 0
-      ) {
-        orderedWorkTypes.push("Pant");
-      }
-
-      // Always include Ironing and Embroidery as optional services
-      orderedWorkTypes.push("Ironing", "Embroidery");
-
-      // Filter to only show work types that are ordered AND not yet assigned
-      const available = orderedWorkTypes.filter(
-        (wt) => !assignedWorkTypes.includes(wt),
+      const itemsWithRemaining = response.items.filter(
+        (item) => item.remainingQty > 0,
       );
+
+      const available = itemsWithRemaining.map((item) => item.itemType);
       setAvailableWorkTypes(available);
     } catch (error) {
       console.error("Error fetching assigned work types:", error);
@@ -529,7 +505,7 @@ const CompanyDashboard = () => {
 
   // Filter work types based on selected labour's category AND order's checked services
   const getFilteredWorkTypes = (labourId) => {
-    const selectedLabour = labourList.find((l) => l._id === labourId);
+    const selectedLabour = labourList.find((l) => String(l.id) === String(labourId));
     if (!selectedLabour || !availableWorkTypes || !selectedOrder) {
       return [];
     }
@@ -553,24 +529,8 @@ const CompanyDashboard = () => {
         labourCapableTypes = availableWorkTypes;
     }
 
-    // Second, filter by what services are actually ordered
-    let orderOrderedTypes = [];
-    if (selectedOrder.shirt && Object.keys(selectedOrder.shirt).length > 0) {
-      orderOrderedTypes.push("Shirt");
-    }
-    if (selectedOrder.pant && Object.keys(selectedOrder.pant).length > 0) {
-      orderOrderedTypes.push("Pant");
-    }
-    // For Ironing and Embroidery, show if labour is capable and it's their job
-    if (labourCapableTypes.includes("Ironing")) {
-      orderOrderedTypes.push("Ironing");
-    }
-    if (labourCapableTypes.includes("Embroidery")) {
-      orderOrderedTypes.push("Embroidery");
-    }
-
-    // Return only work types that are both (1) ordered AND (2) labour is capable of
-    return orderOrderedTypes.filter((wt) => labourCapableTypes.includes(wt));
+    // Return only work types that are both (1) available (not fully assigned) AND (2) labour is capable of
+      return availableWorkTypes.filter((wt) => labourCapableTypes.includes(wt));
   };
 
   // Update work type dropdown when labour is selected
@@ -626,12 +586,12 @@ const CompanyDashboard = () => {
     try {
       setIsSubmitting(true);
       const selectedLabour = labourList.find(
-        (l) => l._id === assignmentData.labourId,
+        (l) => String(l.id) === String(assignmentData.labourId),
       );
 
       await workAssignmentsAPI.create({
         labourId: assignmentData.labourId,
-        orderId: selectedOrder.orderId || selectedOrder.id,
+        orderId: selectedOrder.id || selectedOrder.orderId || selectedOrder._id,
         task_type: assignmentData.workType,
         quantity: parseInt(assignmentData.quantity),
       });
@@ -2945,7 +2905,7 @@ const CompanyDashboard = () => {
                   >
                     <option value="">Choose a labour</option>
                     {labourList.map((labour) => (
-                      <option key={labour._id} value={labour._id}>
+                      <option key={labour.id} value={labour.id}>
                         {labour.name} ({labour.category})
                       </option>
                     ))}
@@ -2966,18 +2926,18 @@ const CompanyDashboard = () => {
                       <>
                         {
                           labourList.find(
-                            (l) => l._id === assignmentData.labourId,
+                            (l) => String(l.id) === String(assignmentData.labourId),
                           )?.category
                         }{" "}
                         can do:{" "}
                         {assignmentData.labourId === ""
                           ? ""
                           : labourList.find(
-                                (l) => l._id === assignmentData.labourId,
+                                (l) => String(l.id) === String(assignmentData.labourId),
                               )?.category === "Tailor"
                             ? "Shirt, Pant"
                             : labourList.find(
-                                  (l) => l._id === assignmentData.labourId,
+                                  (l) => String(l.id) === String(assignmentData.labourId),
                                 )?.category === "Iron Master"
                               ? "Ironing"
                               : "Embroidery"}
@@ -2993,10 +2953,8 @@ const CompanyDashboard = () => {
                         Object.keys(selectedOrder.pant).length > 0
                           ? "Pant"
                           : ""}
-                        {(!selectedOrder?.shirt ||
-                          Object.keys(selectedOrder.shirt).length === 0) &&
-                        (!selectedOrder?.pant ||
-                          Object.keys(selectedOrder.pant).length === 0)
+                        {(!selectedOrder?.shirt || selectedOrder.shirt === '{}' || selectedOrder.shirt === 'null') &&
+                        (!selectedOrder?.pant || selectedOrder.pant === '{}' || selectedOrder.pant === 'null')
                           ? "None"
                           : ""}
                       </>
@@ -3117,3 +3075,4 @@ const CompanyDashboard = () => {
 };
 
 export default CompanyDashboard;
+

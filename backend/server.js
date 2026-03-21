@@ -14,9 +14,25 @@ const { connectDB, initializeTables } = require("./config/db");
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
+      "http://localhost:3001",
+      "http://127.0.0.1:3001",
+    ],
+    credentials: true,
+  }),
+);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+// Debug Logging
+app.use((req, res, next) => {
+  console.log("Incoming:", req.method, req.url);
+  next();
+});
 
 const ordersRoutes = require("./routes/orders");
 const companiesRoutes = require("./routes/companies");
@@ -26,6 +42,7 @@ const wagesRoutes = require("./routes/wages");
 const workAssignmentsRoutes = require("./routes/workAssignments");
 const authRoutes = require("./routes/auth");
 const tryonRoutes = require("./routes/tryon");
+const analyticsRoutes = require("./routes/analytics");
 const { initializeAdmin } = require("./utils/initializeAdmin");
 
 // Routes
@@ -41,6 +58,7 @@ app.use("/api/employees", companyEmployeesRoutes);
 app.use("/api/labour", labourRoutes);
 app.use("/api/wages", wagesRoutes);
 app.use("/api/workAssignments", workAssignmentsRoutes);
+app.use("/api/analytics", analyticsRoutes);
 app.use("/", tryonRoutes);
 
 // Start server after DB connection

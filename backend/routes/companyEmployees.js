@@ -132,7 +132,14 @@ router.post("/", async (req, res) => {
       [companyId],
     );
 
-    console.log("✅ Employee order created successfully:", result.id);
+    const defaultQty = parseInt(noOfSets) || 1;
+    const itemTypes = ["Shirt", "Pant", "Ironing", "Embroidery"];
+    for (const t of itemTypes) {
+      await run(
+        "INSERT INTO order_items (order_id, item_type, total_qty, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)",
+        [result.id, t, defaultQty, now, now],
+      );
+    }
 
     res.status(201).json({
       message: "Employee order created successfully",

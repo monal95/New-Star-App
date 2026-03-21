@@ -11,7 +11,7 @@
     "dev": "electron .",
     "build": "npm run build:frontend && npm run pack",
     "build:frontend": "echo \"Building frontend...\" && cd frontend && npm install && npm run build && cd ..",
-    "pack": "electron-packager . TailoringApp --platform=win32 --arch=x64 --out=releases --overwrite",
+    "pack": "electron-packager . TailoringApp --platform=win32 --arch=x64 --out=releases --overwrite --ignore=\"^/(releases|releases_old|frontend/node_modules|\\.git)\"",
     "pack-all": "npm run build",
     "rebuild-native": "electron-rebuild"
   },
@@ -24,5 +24,14 @@
   "build": {
     "appId": "com.tailoringapp",
     "productName": "Smart Tailoring Management System"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "multer": "^2.1.1",
+    "sqlite3": "^5.1.6"
   }
 }

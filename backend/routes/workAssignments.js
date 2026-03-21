@@ -6,7 +6,14 @@ const { runQuery, getRow, run } = require("../config/db");
 router.get("/", async (req, res) => {
   try {
     const assignments = await runQuery(
-      "SELECT * FROM work_assignments ORDER BY assigned_date DESC",
+      `SELECT 
+        wa.*,
+        COALESCE(o.orderId, e.orderId) AS orderIdString,
+        COALESCE(o.name, o.customer_name, e.name) AS orderCustomerName
+      FROM work_assignments wa
+      LEFT JOIN orders o ON wa.order_id = o.id
+      LEFT JOIN employees e ON wa.employee_id = e.id
+      ORDER BY wa.assigned_date DESC`,
       [],
     );
 
@@ -27,6 +34,7 @@ router.get("/labour/:labourId", async (req, res) => {
         wa.id,
         wa.labour_id,
         wa.order_id,
+        wa.employee_id,
         wa.task_type,
         wa.quantity,
         wa.status,
@@ -34,12 +42,13 @@ router.get("/labour/:labourId", async (req, res) => {
         wa.completed_date,
         wa.createdAt,
         wa.updatedAt,
-        o.orderId,
-        o.customer_name AS orderCustomerName,
+        COALESCE(o.orderId, e.orderId) AS orderId,
+        COALESCE(o.name, o.customer_name, e.name) AS orderCustomerName,
         o.date,
         o.delivery_date
       FROM work_assignments wa
       LEFT JOIN orders o ON wa.order_id = o.id
+      LEFT JOIN employees e ON wa.employee_id = e.id
       WHERE wa.labour_id = ? 
       ORDER BY wa.assigned_date DESC`,
       [labourId],
@@ -52,16 +61,47 @@ router.get("/labour/:labourId", async (req, res) => {
   }
 });
 
-// Get work assignments for a specific order
+// Get work assignments for a specific order (civil or company)
 router.get("/order/:orderId", async (req, res) => {
   try {
     const { orderId } = req.params;
+
+    // We don't know if the frontend passed a string orderId or an integer DB id.
+    // Also we don't know if it's civil or company.
+    // So we lookup the internal IDs first.
+    let civilOrder = await getRow(
+      "SELECT id FROM orders WHERE id = ? OR orderId = ?",
+      [orderId, orderId],
+    );
+    let companyOrder = await getRow(
+      "SELECT id FROM employees WHERE id = ? OR orderId = ?",
+      [orderId, orderId],
+    );
+
+    // If neither found, return empty array rather than error since it might just have no assignments
+    let conditions = [];
+    let params = [];
+
+    if (civilOrder) {
+      conditions.push(`wa.order_id = ?`);
+      params.push(civilOrder.id);
+    }
+
+    if (companyOrder) {
+      conditions.push(`wa.employee_id = ?`);
+      params.push(companyOrder.id);
+    }
+
+    if (conditions.length === 0) {
+      return res.json([]);
+    }
 
     const assignments = await runQuery(
       `SELECT 
         wa.id,
         wa.labour_id,
         wa.order_id,
+        wa.employee_id,
         wa.task_type,
         wa.quantity,
         wa.status,
@@ -69,15 +109,16 @@ router.get("/order/:orderId", async (req, res) => {
         wa.completed_date,
         wa.createdAt,
         wa.updatedAt,
-        o.orderId,
-        o.customer_name AS orderCustomerName,
+        COALESCE(o.orderId, e.orderId) AS orderId,
+        COALESCE(o.name, o.customer_name, e.name) AS orderCustomerName,
         o.date,
         o.delivery_date
       FROM work_assignments wa
       LEFT JOIN orders o ON wa.order_id = o.id
-      WHERE wa.order_id = ? 
+      LEFT JOIN employees e ON wa.employee_id = e.id
+      WHERE ${conditions.join(" OR ")}
       ORDER BY wa.assigned_date DESC`,
-      [orderId],
+      params,
     );
 
     res.json(assignments);
@@ -124,13 +165,28 @@ router.post("/", async (req, res) => {
     }
 
     // Fetch the order to get its quantity AND its internal ID
-    const order = await getRow(
+    let order = await getRow(
       "SELECT * FROM orders WHERE id = ? OR orderId = ?",
       [orderId, orderId],
     );
+    let orderType = "civil";
 
     if (!order) {
-      console.error("[WorkAssignment POST] Order not found:", orderId);
+      // If not found in orders, check if it's a company employee order
+      order = await getRow(
+        "SELECT * FROM employees WHERE id = ? OR orderId = ?",
+        [orderId, orderId],
+      );
+      if (order) {
+        orderType = "company";
+      }
+    }
+
+    if (!order) {
+      console.error(
+        "[WorkAssignment POST] Order not found in orders or employees:",
+        orderId,
+      );
       return res.status(404).json({
         error: "Order not found",
       });
@@ -150,75 +206,42 @@ router.post("/", async (req, res) => {
 
     const assignedQuantity = parseInt(quantity) || 0;
 
-    if (assignedQuantity <= 0) {
-      console.error(
-        "[WorkAssignment POST] Invalid quantity:",
-        assignedQuantity,
+      if (assignedQuantity <= 0) {
+        return res.status(400).json({ error: "Assigned quantity must be greater than 0" });
+      }
+      
+      const item = await getRow(
+        `SELECT * FROM order_items WHERE order_id = ? AND item_type = ?`,
+        [order.id, task_type]
       );
-      return res.status(400).json({
-        error: "Assigned quantity must be greater than 0",
-      });
-    }
+      if (item) {
+        const trueRemaining = item.total_qty - item.assigned_qty;
+        if (assignedQuantity > trueRemaining) {
+          return res.status(400).json({ error: "Exceeds remaining quantity", message: "Exceeds remaining quantity" });
+        }
+        await runQuery(`UPDATE order_items SET assigned_qty = assigned_qty + ? WHERE id = ?`, [assignedQuantity, item.id]);
+      } else {
+        const fieldName = orderType === "company" ? "employee_id" : "order_id";
+        const assignmentResult = await getRow(
+          `SELECT SUM(quantity) as totalAssigned FROM work_assignments WHERE ${fieldName} = ? AND task_type = ?`,
+          [order.id, task_type]
+        );
+        const alreadyAssigned = assignmentResult?.totalAssigned || 0;
+        const totalQty = order.noOfSets || 1;
+        const remainingQty = Math.max(0, totalQty - alreadyAssigned);
 
-    // Calculate remaining quantity for this specific item type
-    // First, try to get from order_items table (preferred)
-    let totalQty = 0;
+        if (assignedQuantity > remainingQty) {
+          return res.status(400).json({ error: "Exceeds remaining quantity", message: "Exceeds remaining quantity" });
+        }
+      }
 
-    const orderItem = await getRow(
-      "SELECT total_qty FROM order_items WHERE order_id = ? AND item_type = ?",
-      [order.id, task_type],
-    );
-
-    if (orderItem) {
-      // Use quantity from order_items table if available
-      totalQty = orderItem.total_qty || 0;
-    } else {
-      // Fallback: Use noOfSets for all item types
-      totalQty = order.noOfSets || 1;
-    }
-
-    // Get total already assigned for this item type
-    const assignmentResult = await getRow(
-      `SELECT SUM(quantity) as totalAssigned FROM work_assignments 
-       WHERE order_id = ? AND task_type = ?`,
-      [order.id, task_type],
-    );
-
-    const alreadyAssigned = assignmentResult?.totalAssigned || 0;
-    const remainingQty = Math.max(0, totalQty - alreadyAssigned);
-
-    console.log("[WorkAssignment POST] Quantity validation:", {
-      task_type,
-      totalQty,
-      alreadyAssigned,
-      remainingQty,
-      requestedQty: assignedQuantity,
-      valid: assignedQuantity <= remainingQty,
-    });
-
-    // NEW: Validate assigned quantity does not exceed remaining quantity
-    if (assignedQuantity > remainingQty) {
-      console.error(
-        `[WorkAssignment POST] Quantity error: requested ${assignedQuantity} exceeds remaining ${remainingQty} for ${task_type}`,
-      );
-      return res.status(400).json({
-        error: `Cannot assign ${assignedQuantity} ${task_type}(s). Only ${remainingQty} remaining available.`,
-        details: {
-          task_type,
-          totalQty,
-          alreadyAssigned,
-          remainingQty,
-          requested: assignedQuantity,
-        },
-      });
-    }
-
-    const now = new Date().toISOString();
+      const now = new Date().toISOString();
     const assignedDate = now.split("T")[0];
 
     console.log("[WorkAssignment POST] Inserting into database:", {
       labour_id: labour.id,
-      order_id: order.id,
+      order_id: orderType === "civil" ? order.id : null,
+      employee_id: orderType === "company" ? order.id : null,
       task_type,
       quantity: parseInt(quantity),
       status: "Pending",
@@ -226,11 +249,12 @@ router.post("/", async (req, res) => {
     });
 
     const result = await run(
-      `INSERT INTO work_assignments (labour_id, order_id, task_type, quantity, status, assigned_date, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO work_assignments (labour_id, order_id, employee_id, task_type, quantity, status, assigned_date, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         labour.id,
-        order.id,
+        orderType === "civil" ? order.id : null,
+        orderType === "company" ? order.id : null,
         task_type,
         parseInt(quantity),
         "Pending",
@@ -248,7 +272,8 @@ router.post("/", async (req, res) => {
       assignment: {
         id: result.id,
         labour_id: labourId,
-        order_id: orderId,
+        order_id: orderType === "civil" ? order.id : null,
+        employee_id: orderType === "company" ? order.id : null,
         task_type,
         quantity: parseInt(quantity),
         status: "Pending",
@@ -376,84 +401,68 @@ router.get("/available-items/:orderId", async (req, res) => {
   try {
     const { orderId } = req.params;
 
-    // First, get the order to validate it exists
-    const order = await getRow(
+    // First, get the order to validate it exists and get its numeric ID
+    let order = await getRow(
       "SELECT id, orderId, shirt, pant, noOfSets FROM orders WHERE id = ? OR orderId = ?",
-      [orderId, orderId],
+      [orderId, orderId]
     );
+    let orderType = "civil";
+
+    if (!order) {
+      order = await getRow(
+        "SELECT id, orderId, shirt, pant, noOfSets FROM employees WHERE id = ? OR orderId = ?",
+        [orderId, orderId]
+      );
+      if (order) {
+        orderType = "company";
+      }
+    }
 
     if (!order) {
       return res.status(404).json({ error: "Order not found" });
     }
 
-    // Define item types that can be assigned
-    const itemTypes = ["Shirt", "Pant", "Ironing", "Embroidery"];
-    const availableItems = [];
+    // Split Order Assignment Logic (as requested)
+    // We will use order_items for items checking. For company employees (which might be mixed),
+    // we still use the order_id, although the backend structure maps it differently.
 
-    // For each potential item type, calculate remaining quantity
-    for (const itemType of itemTypes) {
-      // Try to get total quantity from order_items table first (preferred)
-      let totalQty = 0;
+    const rows = await runQuery(
+      `SELECT item_type AS itemType, total_qty AS totalQty, assigned_qty AS assignedQty,
+       (total_qty - assigned_qty) AS remainingQty
+       FROM order_items
+       WHERE order_id = ? AND assigned_qty < total_qty`,
+      [order.id]
+    );
 
-      const orderItem = await getRow(
-        "SELECT total_qty FROM order_items WHERE order_id = ? AND item_type = ?",
-        [order.id, itemType],
-      );
-
-      if (orderItem) {
-        // Use quantity from order_items table if available
-        totalQty = orderItem.total_qty || 0;
-      } else {
-        // Fallback: Use noOfSets for all item types if order_items not populated
-        totalQty = order.noOfSets || 1;
-      }
-
-      // Get total assigned quantity for this item type (from work_assignments)
-      const assignmentResult = await getRow(
-        `SELECT SUM(quantity) as totalAssigned FROM work_assignments 
-         WHERE order_id = ? AND task_type = ?`,
-        [order.id, itemType],
-      );
-
-      const assignedQty = assignmentResult?.totalAssigned || 0;
-      const remainingQty = Math.max(0, totalQty - assignedQty);
-
-      // Only include items with remaining quantity > 0
-      if (totalQty > 0) {
-        availableItems.push({
-          itemType,
-          totalQty,
-          assignedQty,
-          remainingQty,
-          isFullyAssigned: remainingQty === 0,
-          displayLabel:
-            remainingQty > 0
-              ? `${itemType} (Remaining: ${remainingQty})`
-              : `${itemType} (FULL - ${totalQty}/${totalQty})`,
-        });
-      }
-    }
+    // If order_items is empty (e.g. legacy company orders), fallback to DB sum calculation
+    // but the request expects strictly order_items behavior.
+    
+    // Format response matching the frontend expectations
+    const formattedItems = rows.map(r => ({
+      itemType: r.itemType,
+      totalQty: r.totalQty,
+      assignedQty: r.assignedQty,
+      remainingQty: r.remainingQty,
+      isFullyAssigned: r.remainingQty <= 0,
+      displayLabel: `${r.itemType} (Remaining: ${r.remainingQty})`
+    }));
 
     res.json({
       orderId: order.orderId || order.id,
-      items: availableItems.filter((item) => item.totalQty > 0),
-      allItems: availableItems,
+      items: formattedItems,
+      allItems: formattedItems,
       summary: {
-        totalItems: availableItems.length,
-        availableItems: availableItems.filter((item) => item.remainingQty > 0)
-          .length,
-        fullyAssignedItems: availableItems.filter(
-          (item) => item.isFullyAssigned,
-        ).length,
-      },
+        totalItems: formattedItems.length,
+        availableItems: formattedItems.filter(i => i.remainingQty > 0).length,
+        fullyAssignedItems: 0 // pre-filtered by query
+      }
     });
-  } catch (error) {
-    console.error("Error fetching available items:", error);
-    res.status(500).json({
-      error: "Failed to fetch available items",
-      details: error.message,
-    });
+
+  } catch (err) {
+    res.status(500).json(err);
   }
 });
 
 module.exports = router;
+
+
