@@ -36,3 +36,6 @@ build/
 *.rar
 *.mp4
 *.exe
+*.db
+
+
