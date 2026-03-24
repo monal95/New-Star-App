@@ -43,9 +43,7 @@ const Sidebar = ({ activeView, setActiveView, onLogout }) => {
             <Scissors size={24} className="text-slate-900" />
           </div>
           <div className="flex flex-col">
-            <span className="font-bold text-sm leading-tight">
-              NEW STAR TAILOR
-            </span>
+            <span className="font-bold text-sm leading-tight">NEW STAR</span>
             <span className="text-xs text-slate-400">
               Smart Tailoring System
             </span>
@@ -80,9 +78,7 @@ const Sidebar = ({ activeView, setActiveView, onLogout }) => {
           <LogOut size={18} />
           Logout
         </button>
-        <p className="text-xs text-slate-500 text-center">
-          © 2026 New Star Tailor
-        </p>
+        <p className="text-xs text-slate-500 text-center">© 2026 New Star</p>
       </div>
     </aside>
   );

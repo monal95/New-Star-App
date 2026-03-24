@@ -43,6 +43,7 @@ const workAssignmentsRoutes = require("./routes/workAssignments");
 const authRoutes = require("./routes/auth");
 const tryonRoutes = require("./routes/tryon");
 const analyticsRoutes = require("./routes/analytics");
+const chatRoutes = require("./routes/chat");
 const { initializeAdmin } = require("./utils/initializeAdmin");
 
 // Routes
@@ -59,6 +60,7 @@ app.use("/api/labour", labourRoutes);
 app.use("/api/wages", wagesRoutes);
 app.use("/api/workAssignments", workAssignmentsRoutes);
 app.use("/api/analytics", analyticsRoutes);
+app.use("/api/chat", chatRoutes);
 app.use("/", tryonRoutes);
 
 // Start server after DB connection

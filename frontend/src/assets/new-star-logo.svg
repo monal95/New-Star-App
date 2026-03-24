@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 400" width="300" height="400">
+  <!-- Sewing Machine Head -->
+  <ellipse cx="150" cy="100" rx="60" ry="50" fill="none" stroke="#333" stroke-width="3"/>
+  
+  <!-- Machine Top -->
+  <rect x="120" y="70" width="60" height="15" fill="#333" rx="3"/>
+  
+  <!-- Needle -->
+  <line x1="150" y1="85" x2="150" y2="130" stroke="#666" stroke-width="2"/>
+  <circle cx="150" cy="130" r="4" fill="#666"/>
+  
+  <!-- Wheel -->
+  <circle cx="165" cy="110" r="25" fill="none" stroke="#333" stroke-width="3"/>
+  <circle cx="165" cy="110" r="5" fill="#333"/>
+  <line x1="165" y1="85" x2="165" y2="135" stroke="#333" stroke-width="2"/>
+  <line x1="140" y1="110" x2="190" y2="110" stroke="#333" stroke-width="2"/>
+  
+  <!-- Machine Arm -->
+  <path d="M 120 100 Q 100 95 90 110" fill="none" stroke="#333" stroke-width="3"/>
+  <path d="M 180 100 Q 200 95 210 110" fill="none" stroke="#333" stroke-width="3"/>
+  
+  <!-- Machine Body -->
+  <ellipse cx="150" cy="160" rx="50" ry="40" fill="none" stroke="#333" stroke-width="3"/>
+  
+  <!-- Presser Foot -->
+  <rect x="145" y="155" width="10" height="30" fill="#333" rx="2"/>
+  
+  <!-- Machine Base/Stand -->
+  <rect x="120" y="190" width="60" height="15" fill="#333" rx="3"/>
+  <line x1="130" y1="205" x2="120" y2="230" stroke="#333" stroke-width="3"/>
+  <line x1="170" y1="205" x2="180" y2="230" stroke="#333" stroke-width="3"/>
+  
+  <!-- Base Platform -->
+  <rect x="110" y="225" width="80" height="12" fill="#333" rx="2"/>
+  
+  <!-- Text: NEW STAR -->
+  <text x="150" y="290" font-size="48" font-weight="bold" text-anchor="middle" fill="#333" font-family="serif">
+    NEW STAR
+  </text>
+  
+  <!-- Text: SINCE 1998 -->
+  <text x="150" y="330" font-size="16" text-anchor="middle" fill="#333" font-family="serif" letter-spacing="2">
+    SINCE 1998
+  </text>
+  
+  <!-- Decorative flourish -->
+  <path d="M 80 350 Q 150 365 220 350" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round"/>
+</svg>

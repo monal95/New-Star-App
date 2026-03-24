@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Scissors } from "lucide-react";
+import newStarLogo from "../assets/new-star-logo.svg";
 import "../styles/animations.css";
 
 function LandingPage({ onStartTailoring }) {
@@ -18,21 +18,19 @@ function LandingPage({ onStartTailoring }) {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col items-center justify-center">
       {/* Logo Section */}
       <div className="mb-8 animate-fadeIn">
-        <div className="bg-blue-950 rounded-2xl p-6 shadow-lg">
-          <Scissors size={48} className="text-white" />
-        </div>
+        <img src={newStarLogo} alt="New Star Logo" className="w-48 h-auto" />
       </div>
 
       {/* Main Heading with Animation */}
       <div className="text-center mb-12">
         <h1 className="text-6xl font-bold text-blue-950 mb-4 animate-slideDown">
-          NEW STAR TAILORS
+          NEW STAR
         </h1>
         <p
           className="text-gray-600"
           style={{ fontFamily: "Dancing Script, cursive" }}
         >
-          Perfect Stitch Since 1998.
+          Smart Tailoring Management System
         </p>
       </div>
 
@@ -48,7 +46,7 @@ function LandingPage({ onStartTailoring }) {
 
       {/* Footer */}
       <div className="absolute bottom-8 text-center text-gray-500 text-sm">
-        <p>SINCE 1998 | NEW STAR TAILORS</p>
+        <p>SINCE 1998 | NEW STAR</p>
       </div>
     </div>
   );

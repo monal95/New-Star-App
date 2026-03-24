@@ -8,6 +8,7 @@ import AnalyticsDashboard from "./pages/AnalyticsDashboard";
 import VirtualTryOnDashboard from "./components/VirtualTryOnDashboard";
 import LandingPage from "./components/LandingPage";
 import AdminLogin from "./components/AdminLogin";
+import Chatbot from "./components/Chatbot/Chatbot";
 import { ordersAPI } from "./services/api";
 import { Search, Filter } from "lucide-react";
 
@@ -430,6 +431,7 @@ function App() {
         </header>
         <div className="page-content">{renderView()}</div>
       </main>
+      <Chatbot />
     </div>
   );
 }

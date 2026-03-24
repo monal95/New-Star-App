@@ -420,6 +420,19 @@ export const workAssignmentsAPI = {
   },
 };
 
+// Chat API
+export const chatAPI = {
+  send: async (message) => {
+    const response = await fetch(`${API_BASE_URL}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+    if (!response.ok) throw new Error("Failed to send message");
+    return response.json();
+  },
+};
+
 export default {
   ordersAPI,
   companiesAPI,
@@ -427,4 +440,5 @@ export default {
   labourAPI,
   wagesAPI,
   workAssignmentsAPI,
+  chatAPI,
 };
