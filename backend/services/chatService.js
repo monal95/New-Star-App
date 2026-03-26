@@ -20,6 +20,61 @@ Your expertise includes:
 
 Be concise, helpful, and professional. Use simple language. If asked about something outside tailoring, politely redirect the conversation.`;
 
+// Application usage guide
+const APP_USAGE_GUIDE = `📚 NEW STAR SMART TAILORING SYSTEM - USER GUIDE
+
+🏠 CIVIL DASHBOARD:
+- View all customer orders
+- Track order status (Pending, In Progress, Completed, Delivered)
+- See order details, delivery dates, and amounts
+- Update order statuses
+
+👥 COMPANY DASHBOARD:
+- Manage company accounts and bulk orders
+- View company-wise order analytics
+- Track company performance
+
+👷 LABOUR DASHBOARD:
+- Manage tailor/worker information
+- Assign work to labour
+- Track labour performance and productivity
+
+💰 WAGE CONFIGURATION:
+- Set wage rates for different tasks
+- Configure payment for shirts, pants, ironing, embroidery
+
+📊 ANALYTICS DASHBOARD:
+- View comprehensive business statistics
+- Track total income and order trends
+- Monitor labour productivity
+
+💬 CHATBOT (Me!):
+- Check order status by Order ID
+- Get business statistics
+- Learn about services and pricing
+- Ask for application help
+
+How can I assist you today?`;
+
+const STATISTICS_HELP = `📊 STATISTICS QUERIES YOU CAN ASK:
+- "Show statistics" or "Get stats"
+- "How many orders today?"
+- "Total income?" or "Sales data"
+- "Orders by status"
+- "Labour count" or "Total tailors"
+- "Recent orders"
+
+Example: "Statistics" or "How many pending orders?"`;
+
+const ORDER_HELP = `🛒 ORDER QUERIES YOU CAN ASK:
+- "Order 006" or "Order ID 006"
+- "Check order status 006"
+- "Where is order NS-MAR-006?"
+- "Track order ORD-001"
+- "Order details for 006"
+
+Just mention the Order ID and I'll get you the details!`;
+
 /**
  * Get AI-generated reply using Groq
  */
@@ -47,19 +102,96 @@ async function getAIReply(userMessage) {
 }
 
 /**
+ * Get comprehensive statistics
+ */
+async function getStatistics() {
+  try {
+    // Total orders
+    const totalOrdersResult = await getRow(
+      "SELECT COUNT(*) as count FROM orders",
+      [],
+    );
+    const totalOrders = totalOrdersResult?.count || 0;
+
+    // Orders by status
+    const statusDistribution = await runQuery(
+      "SELECT status, COUNT(*) as count FROM orders GROUP BY status",
+      [],
+    );
+
+    // Total income
+    const incomeResult = await getRow(
+      "SELECT SUM(totalAmount) as total FROM orders WHERE status IN ('Completed', 'Delivered')",
+      [],
+    );
+    const totalIncome = incomeResult?.total || 0;
+
+    // Pending income
+    const pendingResult = await getRow(
+      "SELECT SUM(remainingAmount) as total FROM orders WHERE status != 'Delivered'",
+      [],
+    );
+    const pendingIncome = pendingResult?.total || 0;
+
+    // Today's orders
+    const todayResult = await getRow(
+      "SELECT COUNT(*) as count FROM orders WHERE DATE(createdAt) = DATE('now') OR DATE(created_at) = DATE('now')",
+      [],
+    );
+    const todayOrders = todayResult?.count || 0;
+
+    // Total labour
+    const labourResult = await getRow(
+      "SELECT COUNT(*) as count FROM labour WHERE status = 'Active'",
+      [],
+    );
+    const totalLabour = labourResult?.count || 0;
+
+    // Build status distribution string
+    let statusStr = "";
+    if (statusDistribution && statusDistribution.length > 0) {
+      statusStr = statusDistribution
+        .map((s) => `${s.status}: ${s.count}`)
+        .join("\n");
+    }
+
+    const stats =
+      `📊 BUSINESS STATISTICS\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📦 Total Orders: ${totalOrders}\n` +
+      `📅 Orders Today: ${todayOrders}\n` +
+      `💰 Completed Income: Rs.${totalIncome.toFixed(2)}\n` +
+      `💳 Pending Income: Rs.${pendingIncome.toFixed(2)}\n` +
+      `👷 Active Tailors: ${totalLabour}\n` +
+      `\n` +
+      `ORDER STATUS BREAKDOWN:\n` +
+      (statusStr || "No orders yet") +
+      `\n━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+    return stats;
+  } catch (error) {
+    console.error("Statistics query error:", error);
+    return "Sorry, I couldn't fetch statistics. Please try again.";
+  }
+}
+
+/**
  * Handle order status query
  * Searches by orderId field or numeric id
  */
 async function handleOrderQuery(orderIdentifier) {
   try {
+    // Clean the identifier - remove common prefixes
+    let searchId = orderIdentifier.toString().trim();
+
     // Try to find by orderId (e.g., "NS-MAR-001") or by numeric id
     let order = await getRow(
-      "SELECT id, orderId, name, customer_name, status, dress_type, shirt, pant, delivery_date, totalAmount FROM orders WHERE orderId = ? OR id = ?",
-      [orderIdentifier, orderIdentifier],
+      "SELECT id, orderId, name, customer_name, status, dress_type, shirt, pant, delivery_date, totalAmount, advanceAmount, remainingAmount, paymentMethod FROM orders WHERE orderId = ? OR id = ? OR orderId LIKE ? OR id = ?",
+      [searchId, searchId, `%${searchId}%`, parseInt(searchId) || searchId],
     );
 
     if (!order) {
-      return `Order "${orderIdentifier}" was not found. Please check the order ID and try again. You can ask your tailor for the correct order ID.`;
+      return `Order "${orderIdentifier}" was not found. Please check the order ID and try again. You can ask "Order help" for examples.`;
     }
 
     const customerName = order.name || order.customer_name || "N/A";
@@ -67,13 +199,32 @@ async function handleOrderQuery(orderIdentifier) {
     const ordId = order.orderId || order.id;
     const deliveryDate = order.delivery_date || "Not set";
     const amount = order.totalAmount ? `Rs.${order.totalAmount}` : "N/A";
+    const advance = order.advanceAmount ? `Rs.${order.advanceAmount}` : "0";
+    const remaining = order.remainingAmount
+      ? `Rs.${order.remainingAmount}`
+      : "0";
+
+    // Determine status emoji
+    const statusEmoji =
+      status === "Completed"
+        ? "✅"
+        : status === "Delivered"
+          ? "🚚"
+          : status === "In Progress"
+            ? "⏳"
+            : "📋";
 
     return (
-      `Order #${ordId}\n` +
-      `Customer: ${customerName}\n` +
-      `Status: ${status}\n` +
-      `Delivery Date: ${deliveryDate}\n` +
-      `Total Amount: ${amount}`
+      `${statusEmoji} ORDER #${ordId}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `👤 Customer: ${customerName}\n` +
+      `📊 Status: ${status}\n` +
+      `📅 Delivery: ${deliveryDate}\n` +
+      `💰 Total: ${amount}\n` +
+      `💳 Advance: ${advance}\n` +
+      `▪️ Remaining: ${remaining}\n` +
+      `💵 Payment: ${order.paymentMethod || "Cash"}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━`
     );
   } catch (error) {
     console.error("Order query error:", error);
@@ -102,113 +253,101 @@ async function addOrder(customerName, item, status) {
 }
 
 /**
- * Handle analytics queries
- */
-async function handleAnalyticsQuery(message) {
-  try {
-    const lowerMsg = message.toLowerCase();
-
-    // Total orders in last 7 days
-    if (
-      lowerMsg.includes("total") &&
-      lowerMsg.includes("order") &&
-      (lowerMsg.includes("7 days") ||
-        lowerMsg.includes("last week") ||
-        lowerMsg.includes("last 7"))
-    ) {
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      const result = await getRow(
-        "SELECT COUNT(*) as count FROM orders WHERE createdAt >= ? OR created_at >= ?",
-        [sevenDaysAgo.toISOString(), sevenDaysAgo.toISOString()],
-      );
-      const count = result?.count || 0;
-      return `Total orders created in the last 7 days: ${count}`;
-    }
-
-    // Total orders today
-    if (
-      lowerMsg.includes("total") &&
-      lowerMsg.includes("order") &&
-      lowerMsg.includes("today")
-    ) {
-      const today = new Date().toDateString();
-      const result = await getRow(
-        "SELECT COUNT(*) as count FROM orders WHERE DATE(createdAt) = DATE(?) OR DATE(created_at) = DATE(?)",
-        [new Date().toISOString(), new Date().toISOString()],
-      );
-      const count = result?.count || 0;
-      return `Total orders created today: ${count}`;
-    }
-
-    return null; // Not an analytics query
-  } catch (error) {
-    console.error("Analytics query error:", error);
-    return null;
-  }
-}
-
-/**
  * Route incoming message to the appropriate handler
  */
 async function routeMessage(message) {
   const msg = message.trim();
   const lowerMsg = msg.toLowerCase();
 
-  // 1. Check for analytics queries first
-  const analyticsResult = await handleAnalyticsQuery(msg);
-  if (analyticsResult) {
-    return analyticsResult;
+  // 1. Check for help/guide requests
+  if (
+    lowerMsg.includes("help") ||
+    lowerMsg.includes("how to use") ||
+    lowerMsg.includes("guide") ||
+    lowerMsg.includes("tutorial")
+  ) {
+    if (lowerMsg.includes("order") || lowerMsg.includes("track")) {
+      return ORDER_HELP;
+    } else if (lowerMsg.includes("stat") || lowerMsg.includes("analyt")) {
+      return STATISTICS_HELP;
+    } else {
+      return APP_USAGE_GUIDE;
+    }
   }
 
-  // 2. Check for "add order" command
+  // 2. Check for statistics/analytics queries
+  if (
+    lowerMsg.includes("statistics") ||
+    lowerMsg.includes("stats") ||
+    lowerMsg.includes("analytics") ||
+    (lowerMsg.includes("how many") &&
+      (lowerMsg.includes("order") ||
+        lowerMsg.includes("income") ||
+        lowerMsg.includes("tailor") ||
+        lowerMsg.includes("labour"))) ||
+    lowerMsg.includes("business summary") ||
+    lowerMsg.includes("total income") ||
+    lowerMsg.includes("sales data") ||
+    lowerMsg.includes("pending orders") ||
+    lowerMsg.includes("completed orders")
+  ) {
+    return await getStatistics();
+  }
+
+  // 3. Check for "add order" command
   const addOrderMatch = msg.match(/^add\s+order\s+(\S+)\s+(\S+)\s*(\S+)?$/i);
   if (addOrderMatch) {
     const [, name, item, status] = addOrderMatch;
     return await addOrder(name, item, status);
   }
 
-  // 3. Check for order status query - improved patterns
+  // 4. Check for order status query - improved patterns
   const orderStatusPatterns = [
-    /(?:order\s*(?:status|track|check|details|info|completed|ready|done))\s*[:#]?\s*(\S+)/i,
-    /(?:status|track|check|completed|ready|done)\s+(?:order|my order)\s*[:#]?\s*(\S+)/i,
-    /(?:is|are)\s+(?:.*?\s+)?order\s+(\S+)\s+(?:completed|ready|done|finished)/i,
-    /(?:where is|what about|is)\s+(?:order|my order|the order)\s*[:#]?\s*(\S+)/i,
-    /^#?(\d+)$/,
-    /\b(ORD\d+)\b/i, // Match order IDs like ORD008
+    // "order 006", "order id 006", "order NS-MAR-006"
+    /order\s+(?:id|#|:)?\s*([A-Z0-9\-]+|\d+)/i,
+    // "check order status 006", "track order 006"
+    /(?:check|track|check status of|status of)\s+order\s+([A-Z0-9\-]+|\d+)/i,
+    // "is order 006 ready", "where is order 006"
+    /(?:is|where is|what about)\s+order\s+(?:id)?\s*([A-Z0-9\-]+|\d+)/i,
+    // "006 status", "#006"
+    /^#?([A-Z0-9\-]{2,}|\d+)$/i,
+    // "ORD008", "NS-MAR-001"
+    /\b((?:ORD|NS)[A-Z0-9\-]*|\d{3,})\b/i,
+    // Just a number like "006"
+    /(?:^|\s)(\d{2,})(?:\s|$)/i,
   ];
 
   for (const pattern of orderStatusPatterns) {
     const match = lowerMsg.match(pattern);
-    if (match) {
+    if (match && match[1]) {
       return await handleOrderQuery(match[1]);
     }
   }
 
   // Also check if order-related keywords are present with an ID
   if (
-    lowerMsg.includes("order") &&
-    (lowerMsg.includes("status") ||
+    (lowerMsg.includes("order") ||
       lowerMsg.includes("track") ||
       lowerMsg.includes("check") ||
-      lowerMsg.includes("completed") ||
-      lowerMsg.includes("ready") ||
-      lowerMsg.includes("done"))
+      lowerMsg.includes("status")) &&
+    !lowerMsg.includes("all order") &&
+    !lowerMsg.includes("total order")
   ) {
     const idMatch =
-      msg.match(/\b(\d+)\b/) || msg.match(/\b(ORD\d+|NS-\w+-\d+)\b/i);
+      msg.match(/\b(\d+)\b/) || msg.match(/\b(ORD\d+|NS[\w\-]*\d+)\b/i);
     if (idMatch) {
       return await handleOrderQuery(idMatch[1]);
     }
   }
 
-  // 4. General query - use AI
+  // 5. General query - use AI
   return await getAIReply(msg);
 }
 
 module.exports = {
   getAIReply,
   handleOrderQuery,
+  getStatistics,
   addOrder,
   routeMessage,
 };

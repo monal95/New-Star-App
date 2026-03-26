@@ -3,9 +3,9 @@ import ChatMessage from "./ChatMessage";
 import { chatAPI } from "../../services/api";
 
 const QUICK_ACTIONS = [
-  { label: "Check Order Status", message: "How can I check my order status?" },
-  { label: "View Pricing", message: "What are your pricing details?" },
-  { label: "Help", message: "What services do you offer?" },
+  { label: "📋 Check Order", message: "Order help" },
+  { label: "📊 Statistics", message: "Statistics" },
+  { label: "❓ Help", message: "help" },
 ];
 
 const ChatWindow = ({ onClose }) => {
@@ -86,7 +86,16 @@ const ChatWindow = ({ onClose }) => {
       <div className="chatbot-header">
         <div className="chatbot-header-info">
           <div className="chatbot-header-avatar">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M14.5 3.5C14.5 3.5 14.5 5.5 12 5.5C9.5 5.5 9.5 3.5 9.5 3.5" />
               <path d="M8.5 14.5C8.5 14.5 9.5 16 12 16C14.5 16 15.5 14.5 15.5 14.5" />
               <rect x="3" y="7" width="18" height="13" rx="2" />
@@ -108,7 +117,16 @@ const ChatWindow = ({ onClose }) => {
           aria-label="Close chat"
           id="chatbot-close-btn"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
@@ -137,7 +155,16 @@ const ChatWindow = ({ onClose }) => {
         {isTyping && (
           <div className="chatbot-message-row bot">
             <div className="chatbot-avatar">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M14.5 3.5C14.5 3.5 14.5 5.5 12 5.5C9.5 5.5 9.5 3.5 9.5 3.5" />
                 <path d="M8.5 14.5C8.5 14.5 9.5 16 12 16C14.5 16 15.5 14.5 15.5 14.5" />
                 <rect x="3" y="7" width="18" height="13" rx="2" />
@@ -177,7 +204,16 @@ const ChatWindow = ({ onClose }) => {
           aria-label="Send message"
           id="chatbot-send-btn"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <line x1="22" y1="2" x2="11" y2="13" />
             <polygon points="22 2 15 22 11 13 2 9 22 2" />
           </svg>

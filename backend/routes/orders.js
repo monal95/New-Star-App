@@ -60,23 +60,44 @@ router.get("/search/customers", async (req, res) => {
 
     // Search for customers with matching names (case-insensitive)
     // Only search civil orders (orders without company_id)
+    // Use a subquery to get measurements from the most recent order for each customer
     const customers = await runQuery(
       `SELECT 
-        LOWER(name) as id,
-        name,
-        phone,
-        email,
-        shirt,
-        pant,
-        MAX(date) as lastOrderDate,
+        LOWER(o.name) as id,
+        o.name,
+        o.phone,
+        o.email,
+        o.shirt,
+        o.pant,
+        MAX(o.date) as lastOrderDate,
         COUNT(*) as orderCount
-      FROM orders 
-      WHERE company_id IS NULL AND LOWER(name) LIKE LOWER(?)
-      GROUP BY LOWER(name)
-      ORDER BY createdAt DESC
+      FROM orders o
+      WHERE o.company_id IS NULL AND LOWER(o.name) LIKE LOWER(?)
+      GROUP BY LOWER(o.name)
+      ORDER BY MAX(o.createdAt) DESC
       LIMIT 5`,
       [`%${name}%`],
     );
+
+    // For each grouped customer, fetch the actual measurements from their most recent order
+    const customersWithLatestMeasurements = await Promise.all(
+      customers.map(async (customer) => {
+        const latestOrder = await getRow(
+          `SELECT shirt, pant FROM orders 
+           WHERE company_id IS NULL AND LOWER(name) = LOWER(?)
+           ORDER BY date DESC, createdAt DESC
+           LIMIT 1`,
+          [customer.name],
+        );
+        return {
+          ...customer,
+          shirt: latestOrder?.shirt || "{}",
+          pant: latestOrder?.pant || "{}",
+        };
+      }),
+    );
+
+    res.json(customersWithLatestMeasurements);
 
     res.json(customers);
   } catch (error) {

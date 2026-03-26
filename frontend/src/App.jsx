@@ -5,7 +5,6 @@ import CivilDashboard from "./components/CivilDashboard";
 import CompanyDashboard from "./components/CompanyDashboard";
 import LabourDashboard from "./components/LabourDashboard";
 import AnalyticsDashboard from "./pages/AnalyticsDashboard";
-import VirtualTryOnDashboard from "./components/VirtualTryOnDashboard";
 import LandingPage from "./components/LandingPage";
 import AdminLogin from "./components/AdminLogin";
 import Chatbot from "./components/Chatbot/Chatbot";
@@ -129,11 +128,6 @@ function App() {
           title: "Analytics Dashboard",
           subtitle: "Track your tailoring business performance",
         };
-      case "virtual-tryon":
-        return {
-          title: "Virtual Try-On Studio",
-          subtitle: "Preview your outfit using AI-powered virtual fitting room",
-        };
       case "civil":
         return {
           title: "Customer Orders",
@@ -180,8 +174,6 @@ function App() {
         );
       case "analytics-dashboard":
         return <AnalyticsDashboard />;
-      case "virtual-tryon":
-        return <VirtualTryOnDashboard />;
       case "civil":
         return (
           <CivilForm

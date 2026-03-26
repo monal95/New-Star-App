@@ -41,7 +41,6 @@ const labourRoutes = require("./routes/labour");
 const wagesRoutes = require("./routes/wages");
 const workAssignmentsRoutes = require("./routes/workAssignments");
 const authRoutes = require("./routes/auth");
-const tryonRoutes = require("./routes/tryon");
 const analyticsRoutes = require("./routes/analytics");
 const chatRoutes = require("./routes/chat");
 const { initializeAdmin } = require("./utils/initializeAdmin");
@@ -61,7 +60,6 @@ app.use("/api/wages", wagesRoutes);
 app.use("/api/workAssignments", workAssignmentsRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/chat", chatRoutes);
-app.use("/", tryonRoutes);
 
 // Start server after DB connection
 const PORT = process.env.PORT || 5000;

@@ -83,18 +83,51 @@ router.post("/", async (req, res) => {
         .json({ error: "Company ID and name are required" });
     }
 
-    // Get count of existing orders for this company to generate incremental OrderID
-    const countResult = await getRow(
-      "SELECT COUNT(*) as count FROM employees WHERE company_id = ?",
-      [companyId],
-    );
-    const nextOrderNumber = (countResult?.count || 0) + 1;
-    const generatedOrderId = `ORD${String(nextOrderNumber).padStart(3, "0")}`;
-
     // Validate position
     const validPosition = POSITION_TYPES.includes(position)
       ? position
       : "Employee";
+
+    // Map position to category prefix for OrderID generation
+    const positionPrefixMap = {
+      Watchman: "WTM",
+      Employee: "EMP",
+      HR: "HR",
+      Manager: "MGR",
+      Security: "SEC",
+      "Senior Manager": "SMR",
+      Housekeeping: "HK",
+      Other: "OTH",
+    };
+
+    const prefix = positionPrefixMap[validPosition] || "OTH";
+    const counterKey = `employee_counter_${prefix}`;
+
+    // Generate position-specific incremental OrderID
+    const counter = await getRow("SELECT * FROM order_counters WHERE id = ?", [
+      counterKey,
+    ]);
+
+    if (!counter) {
+      // First time initialization for this category
+      const now = new Date().toISOString();
+      await run(
+        "INSERT INTO order_counters (id, lastMonth, count, lastResetDate) VALUES (?, ?, ?, ?)",
+        [counterKey, new Date().getFullYear() + "-01", 0, now],
+      );
+    }
+
+    // Atomically increment counter for this position category
+    await run("UPDATE order_counters SET count = count + 1 WHERE id = ?", [
+      counterKey,
+    ]);
+
+    const updatedCounter = await getRow(
+      "SELECT * FROM order_counters WHERE id = ?",
+      [counterKey],
+    );
+
+    const generatedOrderId = `${prefix}${String(updatedCounter.count).padStart(3, "0")}`;
     const now = new Date().toISOString();
 
     console.log("📝 Creating employee order:", {
@@ -105,6 +138,35 @@ router.post("/", async (req, res) => {
       orderId: generatedOrderId,
     });
 
+    // First, create an order record (required for order_items foreign key)
+    const orderResult = await run(
+      `INSERT INTO orders (
+        orderId, name, phone, email, noOfSets, shirtAmount, pantAmount,
+        totalAmount, advanceAmount, remainingAmount, paymentMethod,
+        shirt, pant, status, company_id, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        generatedOrderId,
+        name,
+        phone,
+        "",
+        parseInt(noOfSets) || 1,
+        500,
+        400,
+        (parseInt(noOfSets) || 1) * 900,
+        0,
+        (parseInt(noOfSets) || 1) * 900,
+        "Cash",
+        JSON.stringify(shirt || {}),
+        JSON.stringify(pant || {}),
+        "Pending",
+        companyId,
+        now,
+        now,
+      ],
+    );
+
+    // Now create the employee record
     const result = await run(
       `INSERT INTO employees (name, role, position, company_id, email, phone, joinDate, status, createdAt, updatedAt, orderId, noOfSets, shirt, pant)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -132,12 +194,13 @@ router.post("/", async (req, res) => {
       [companyId],
     );
 
+    // Insert order items (using the order ID, not employee ID)
     const defaultQty = parseInt(noOfSets) || 1;
     const itemTypes = ["Shirt", "Pant", "Ironing", "Embroidery"];
     for (const t of itemTypes) {
       await run(
         "INSERT INTO order_items (order_id, item_type, total_qty, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)",
-        [result.id, t, defaultQty, now, now],
+        [orderResult.id, t, defaultQty, now, now],
       );
     }
 

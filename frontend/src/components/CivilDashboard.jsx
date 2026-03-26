@@ -15,7 +15,7 @@ import {
   Zap,
   ShoppingCart,
   Ruler,
-  Sparkles,
+  Wand2,
 } from "lucide-react";
 import { ordersAPI, labourAPI, workAssignmentsAPI } from "../services/api";
 import Toast from "./Toast";
@@ -27,7 +27,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
   const [timePeriod, setTimePeriod] = useState("all");
   const [selectedDate, setSelectedDate] = useState("");
   const [activeFilter, setActiveFilter] = useState("all"); // all, pending, completed
-  const [showRevenueModal, setShowRevenueModal] = useState(false);
+  const [showIncomeModal, setShowIncomeModal] = useState(false);
   const [showMeasurementsModal, setShowMeasurementsModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -375,33 +375,33 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
       (o) => o.status === "Delivered" || o.status === "Completed",
     ).length;
 
-    // Calculate revenue only from delivered orders using actual order amounts
+    // Calculate income only from delivered orders using actual order amounts
     const deliveredOrders = filteredByTime.filter(
       (o) => o.status === "Delivered" || o.status === "Completed",
     );
 
-    // Calculate revenue from actual order prices
-    const revenue = deliveredOrders.reduce((sum, o) => {
+    // Calculate income from actual order prices
+    const income = deliveredOrders.reduce((sum, o) => {
       const sets = parseInt(o.noOfSets) || 1;
       const shirtPrice = parseFloat(o.shirtAmount) || 0;
       const pantPrice = parseFloat(o.pantAmount) || 0;
       return sum + (shirtPrice + pantPrice) * sets;
     }, 0);
 
-    // Shirt and Pant revenue breakdown using actual prices
-    const shirtRevenue = deliveredOrders.reduce((sum, o) => {
+    // Shirt and Pant income breakdown using actual prices
+    const shirtIncome = deliveredOrders.reduce((sum, o) => {
       const sets = parseInt(o.noOfSets) || 1;
       const shirtPrice = parseFloat(o.shirtAmount) || 0;
       return sum + shirtPrice * sets;
     }, 0);
 
-    const pantRevenue = deliveredOrders.reduce((sum, o) => {
+    const pantIncome = deliveredOrders.reduce((sum, o) => {
       const sets = parseInt(o.noOfSets) || 1;
       const pantPrice = parseFloat(o.pantAmount) || 0;
       return sum + pantPrice * sets;
     }, 0);
 
-    return { total, pending, completed, revenue, shirtRevenue, pantRevenue };
+    return { total, pending, completed, income, shirtIncome, pantIncome };
   }, [filteredByTime]);
 
   // Filter orders for display
@@ -425,8 +425,8 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
   };
 
   const handleCardClick = (type) => {
-    if (type === "revenue") {
-      setShowRevenueModal(true);
+    if (type === "income") {
+      setShowIncomeModal(true);
     } else if (type === "pending") {
       setActiveFilter("pending");
     } else if (type === "completed") {
@@ -515,7 +515,9 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
 
   // Filter work types based on selected labour's category AND order's checked services
   const getFilteredWorkTypes = (labourId) => {
-    const selectedLabour = labourList.find((l) => String(l.id) === String(labourId));
+    const selectedLabour = labourList.find(
+      (l) => String(l.id) === String(labourId),
+    );
     if (!selectedLabour || !selectedOrder) {
       return [];
     }
@@ -526,8 +528,13 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
       "Order services:",
       {
         shirt:
-          (selectedOrder.shirt && selectedOrder.shirt !== '{}' && selectedOrder.shirt !== 'null'),
-        pant: (selectedOrder.pant && selectedOrder.pant !== '{}' && selectedOrder.pant !== 'null'),
+          selectedOrder.shirt &&
+          selectedOrder.shirt !== "{}" &&
+          selectedOrder.shirt !== "null",
+        pant:
+          selectedOrder.pant &&
+          selectedOrder.pant !== "{}" &&
+          selectedOrder.pant !== "null",
         embroidery: selectedOrder.embroidery,
       },
     );
@@ -552,9 +559,9 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
     }
 
     // Filter using availableWorkTypes from API which already checks remaining quantities
-      let filtered = availableWorkTypes.filter((wt) =>
-        labourCapableTypes.includes(wt)
-      );
+    let filtered = availableWorkTypes.filter((wt) =>
+      labourCapableTypes.includes(wt),
+    );
 
     // Filter out work types that have 0 remaining quantity
     filtered = filtered.filter((wt) => {
@@ -894,11 +901,11 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
         <div
           className="stat-card"
           style={{ cursor: "pointer" }}
-          onClick={() => handleCardClick("revenue")}
+          onClick={() => handleCardClick("income")}
         >
           <div className="stat-info">
-            <h3>Revenue</h3>
-            <p className="stat-value">₹{stats.revenue.toLocaleString()}</p>
+            <h3>Income</h3>
+            <p className="stat-value">₹{stats.income.toLocaleString()}</p>
           </div>
           <div className="stat-icon info">
             <IndianRupee size={24} />
@@ -1071,18 +1078,18 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
         </div>
       </div>
 
-      {/* Revenue Modal with Pie Chart */}
-      {showRevenueModal && (
+      {/* Income Modal with Pie Chart */}
+      {showIncomeModal && (
         <div
           className="modal-overlay"
-          onClick={() => setShowRevenueModal(false)}
+          onClick={() => setShowIncomeModal(false)}
         >
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Revenue Analysis</h3>
+              <h3>Income Analysis</h3>
               <button
                 className="btn btn-sm btn-secondary"
-                onClick={() => setShowRevenueModal(false)}
+                onClick={() => setShowIncomeModal(false)}
               >
                 <X size={18} />
               </button>
@@ -1109,7 +1116,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                     viewBox="0 0 100 100"
                     style={{ transform: "rotate(-90deg)" }}
                   >
-                    {stats.revenue > 0 ? (
+                    {stats.income > 0 ? (
                       <>
                         <circle
                           cx="50"
@@ -1118,7 +1125,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                           fill="transparent"
                           stroke="#1e3a8a"
                           strokeWidth="20"
-                          strokeDasharray={`${(stats.shirtRevenue / stats.revenue) * 251.2} 251.2`}
+                          strokeDasharray={`${(stats.shirtIncome / stats.income) * 251.2} 251.2`}
                         />
                         <circle
                           cx="50"
@@ -1127,8 +1134,8 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                           fill="transparent"
                           stroke="#60a5fa"
                           strokeWidth="20"
-                          strokeDasharray={`${(stats.pantRevenue / stats.revenue) * 251.2} 251.2`}
-                          strokeDashoffset={`-${(stats.shirtRevenue / stats.revenue) * 251.2}`}
+                          strokeDasharray={`${(stats.pantIncome / stats.income) * 251.2} 251.2`}
+                          strokeDashoffset={`-${(stats.shirtIncome / stats.income) * 251.2}`}
                         />
                       </>
                     ) : (
@@ -1152,7 +1159,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                     }}
                   >
                     <div style={{ fontSize: "1.25rem", fontWeight: "bold" }}>
-                      ₹{stats.revenue.toLocaleString()}
+                      ₹{stats.income.toLocaleString()}
                     </div>
                     <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
                       Total
@@ -1195,7 +1202,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                     <div>
                       <div style={{ fontWeight: "600" }}>Shirts</div>
                       <div style={{ color: "#64748b" }}>
-                        ₹{stats.shirtRevenue.toLocaleString()}
+                        ₹{stats.shirtIncome.toLocaleString()}
                       </div>
                     </div>
                   </div>
@@ -1226,7 +1233,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                     <div>
                       <div style={{ fontWeight: "600" }}>Pants</div>
                       <div style={{ color: "#64748b" }}>
-                        ₹{stats.pantRevenue.toLocaleString()}
+                        ₹{stats.pantIncome.toLocaleString()}
                       </div>
                     </div>
                   </div>
@@ -1667,7 +1674,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                               fontSize: "1rem",
                             }}
                           >
-                            <Sparkles
+                            <Wand2
                               size={18}
                               style={{
                                 display: "inline",
@@ -2007,7 +2014,7 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                             gap: "0.5rem",
                           }}
                         >
-                          <Sparkles size={16} />
+                          <Wand2 size={16} />
                           Embroidery Design
                         </h5>
                         <div className="form-group">
@@ -2492,18 +2499,23 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                       <>
                         {
                           labourList.find(
-                            (l) => String(l.id) === String(assignmentData.labourId),
+                            (l) =>
+                              String(l.id) === String(assignmentData.labourId),
                           )?.category
                         }{" "}
                         can do:{" "}
                         {assignmentData.labourId === ""
                           ? ""
                           : labourList.find(
-                                (l) => String(l.id) === String(assignmentData.labourId),
+                                (l) =>
+                                  String(l.id) ===
+                                  String(assignmentData.labourId),
                               )?.category === "Tailor"
                             ? "Shirt, Pant"
                             : labourList.find(
-                                  (l) => String(l.id) === String(assignmentData.labourId),
+                                  (l) =>
+                                    String(l.id) ===
+                                    String(assignmentData.labourId),
                                 )?.category === "Iron Master"
                               ? "Ironing"
                               : "Embroidery"}
@@ -2519,8 +2531,12 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
                         Object.keys(selectedOrder.pant).length > 0
                           ? "Pant"
                           : ""}
-                        {(!selectedOrder?.shirt || selectedOrder.shirt === '{}' || selectedOrder.shirt === 'null') &&
-                        (!selectedOrder?.pant || selectedOrder.pant === '{}' || selectedOrder.pant === 'null')
+                        {(!selectedOrder?.shirt ||
+                          selectedOrder.shirt === "{}" ||
+                          selectedOrder.shirt === "null") &&
+                        (!selectedOrder?.pant ||
+                          selectedOrder.pant === "{}" ||
+                          selectedOrder.pant === "null")
                           ? "None"
                           : ""}
                       </>
@@ -2777,4 +2793,3 @@ const CivilDashboard = ({ orders, updateOrderStatus, refreshOrders }) => {
 };
 
 export default CivilDashboard;
-

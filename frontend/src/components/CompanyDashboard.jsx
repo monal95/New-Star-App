@@ -27,7 +27,7 @@ import {
   AlertTriangle,
   ShoppingCart,
   Ruler,
-  Sparkles,
+  Wand2,
   IndianRupee,
 } from "lucide-react";
 import {
@@ -133,10 +133,13 @@ const CompanyDashboard = () => {
     "Ironing",
     "Embroidery",
   ]);
+  const [itemDisplayMap, setItemDisplayMap] = useState({}); // Maps item type to detailed quantity info
+  const [availableItemsData, setAvailableItemsData] = useState(null); // Full response from getAvailableItems
   const [assignmentData, setAssignmentData] = useState({
     labourId: "",
     workType: "",
     quantity: 1,
+    customWage: "",
   });
 
   // Fetch companies
@@ -484,38 +487,75 @@ const CompanyDashboard = () => {
   };
 
   // Fetch already assigned work types and get available work types based on order
-  const fetchAssignedWorkTypes = async (order) => {
+  // Fetch available items with remaining quantities for smart assignment
+  const fetchAvailableItems = async (order) => {
     try {
-      const response = await workAssignmentsAPI.getAvailableItems(
-        order.id || order.orderId || order._id,
+      console.log(
+        "[fetchAvailableItems] Fetching for order:",
+        order.orderId || order._id,
       );
 
-      const itemsWithRemaining = response.items.filter(
+      // Get available items from the backend (calculates remaining quantities)
+      const availableItemsResponse = await workAssignmentsAPI.getAvailableItems(
+        order.id || order._id,
+      );
+
+      console.log("[fetchAvailableItems] Response:", availableItemsResponse);
+
+      // Filter to only include items with remaining quantity > 0
+      const itemsWithRemaining = availableItemsResponse.items.filter(
         (item) => item.remainingQty > 0,
       );
 
-      const available = itemsWithRemaining.map((item) => item.itemType);
-      setAvailableWorkTypes(available);
+      console.log("[fetchAvailableItems] Items with remaining quantity:", {
+        allItems: availableItemsResponse.items,
+        itemsWithRemaining,
+        summary: availableItemsResponse.summary,
+      });
+
+      // Extract just the item types that still have quantity to assign
+      const availableTypes = itemsWithRemaining.map((item) => item.itemType);
+
+      // Create a display map that includes remaining quantity in the label
+      const itemDisplayMap = {};
+      availableItemsResponse.allItems.forEach((item) => {
+        itemDisplayMap[item.itemType] = item;
+      });
+
+      setAvailableWorkTypes(availableTypes);
+      setItemDisplayMap(itemDisplayMap);
+      setAvailableItemsData(availableItemsResponse);
     } catch (error) {
-      console.error("Error fetching assigned work types:", error);
-      // Fallback: show all types if there's an error
+      console.error("[fetchAvailableItems] Error:", error);
+      // Fallback: show all types if API fails
       setAvailableWorkTypes(["Pant", "Shirt", "Ironing", "Embroidery"]);
+      setItemDisplayMap({});
+      setAvailableItemsData(null);
     }
   };
 
-  // Filter work types based on selected labour's category AND order's checked services
+  // Filter work types based on selected labour's category AND available items with remaining qty
   const getFilteredWorkTypes = (labourId) => {
-    const selectedLabour = labourList.find((l) => String(l.id) === String(labourId));
-    if (!selectedLabour || !availableWorkTypes || !selectedOrder) {
+    const selectedLabour = labourList.find(
+      (l) => String(l.id) === String(labourId),
+    );
+    if (!selectedLabour || !selectedOrder) {
       return [];
     }
 
-    // First, get work types that labour can do based on category
+    console.log(
+      "[getFilteredWorkTypes] Labour:",
+      selectedLabour?.category,
+      "Available work types:",
+      availableWorkTypes,
+    );
+
+    // Step 1: Determine what labour can do based on category
     let labourCapableTypes = [];
     switch (selectedLabour.category) {
       case "Tailor":
         // Tailors can do Shirt and Pant work
-        labourCapableTypes = ["Shirt", "Pant"];
+        labourCapableTypes = ["Shirt", "Pant", "Ironing"];
         break;
       case "Iron Master":
         // Iron Master can do Ironing work
@@ -526,11 +566,25 @@ const CompanyDashboard = () => {
         labourCapableTypes = ["Embroidery"];
         break;
       default:
-        labourCapableTypes = availableWorkTypes;
+        labourCapableTypes = ["Shirt", "Pant", "Ironing", "Embroidery"];
     }
 
-    // Return only work types that are both (1) available (not fully assigned) AND (2) labour is capable of
-      return availableWorkTypes.filter((wt) => labourCapableTypes.includes(wt));
+    // Filter using availableWorkTypes from API which already checks remaining quantities
+    let filtered = availableWorkTypes.filter((wt) =>
+      labourCapableTypes.includes(wt),
+    );
+
+    // Filter out work types that have 0 remaining quantity
+    filtered = filtered.filter((wt) => {
+      const itemInfo = itemDisplayMap[wt];
+      return itemInfo ? itemInfo.remainingQty > 0 : true; // if no itemInfo, assume available just in case
+    });
+
+    // Remove duplicates
+    const unique = [...new Set(filtered)];
+
+    console.log("[getFilteredWorkTypes] Result:", unique);
+    return unique;
   };
 
   // Update work type dropdown when labour is selected
@@ -549,8 +603,9 @@ const CompanyDashboard = () => {
       labourId: "",
       workType: "",
       quantity: 1,
+      customWage: "",
     });
-    await fetchAssignedWorkTypes(order);
+    await fetchAvailableItems(order);
     await loadLabourList();
     setShowAssignModal(true);
   };
@@ -563,6 +618,7 @@ const CompanyDashboard = () => {
       labourId: "",
       workType: "",
       quantity: 1,
+      customWage: "",
     });
   };
 
@@ -583,32 +639,76 @@ const CompanyDashboard = () => {
       return;
     }
 
+    const assignedQuantity = parseInt(assignmentData.quantity) || 0;
+
+    // Validate quantity against remaining quantity for the specific work type
+    const itemInfo = itemDisplayMap[assignmentData.workType];
+    const remainingQty = itemInfo?.remainingQty || 0;
+
+    console.log("[Assignment Validation]", {
+      workType: assignmentData.workType,
+      itemInfo,
+      remainingQty,
+      requestedQty: assignedQuantity,
+      labour: assignmentData.labourId,
+    });
+
+    if (assignedQuantity <= 0) {
+      setToast({
+        show: true,
+        message: "Assigned quantity must be greater than 0",
+        type: "error",
+      });
+      return;
+    }
+
+    // New validation: Check against remaining quantity for the specific work type
+    if (assignedQuantity > remainingQty) {
+      setToast({
+        show: true,
+        message: `Cannot assign ${assignedQuantity} ${assignmentData.workType}(s). Only ${remainingQty} remaining.`,
+        type: "error",
+      });
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       const selectedLabour = labourList.find(
         (l) => String(l.id) === String(assignmentData.labourId),
       );
 
-      await workAssignmentsAPI.create({
+      const assignmentPayload = {
         labourId: assignmentData.labourId,
         orderId: selectedOrder.id || selectedOrder.orderId || selectedOrder._id,
         task_type: assignmentData.workType,
         quantity: parseInt(assignmentData.quantity),
-      });
+        customWage: assignmentData.customWage
+          ? parseFloat(assignmentData.customWage)
+          : null,
+      };
+
+      console.log("[Submitting Assignment]", assignmentPayload);
+
+      await workAssignmentsAPI.create(assignmentPayload);
 
       setToast({
         show: true,
-        message: `Work assigned to ${selectedLabour?.name}`,
+        message: `Work assigned to ${selectedLabour?.name} successfully`,
         type: "success",
       });
-      handleCloseAssignModal();
 
-      // Refresh the assignment data for this order
-      await fetchAssignedWorkTypes(selectedOrder.orderId || selectedOrder.id);
+      // Refresh available items to show updated remaining quantities
+      if (selectedOrder) {
+        await fetchAvailableItems(selectedOrder);
+      }
+
+      handleCloseAssignModal();
     } catch (error) {
+      console.error("[Assignment Error]", error);
       setToast({
         show: true,
-        message: error.message || "Failed to assign work",
+        message: `Failed to assign work: ${error.message}`,
         type: "error",
       });
     } finally {
@@ -2926,18 +3026,23 @@ const CompanyDashboard = () => {
                       <>
                         {
                           labourList.find(
-                            (l) => String(l.id) === String(assignmentData.labourId),
+                            (l) =>
+                              String(l.id) === String(assignmentData.labourId),
                           )?.category
                         }{" "}
                         can do:{" "}
                         {assignmentData.labourId === ""
                           ? ""
                           : labourList.find(
-                                (l) => String(l.id) === String(assignmentData.labourId),
+                                (l) =>
+                                  String(l.id) ===
+                                  String(assignmentData.labourId),
                               )?.category === "Tailor"
                             ? "Shirt, Pant"
                             : labourList.find(
-                                  (l) => String(l.id) === String(assignmentData.labourId),
+                                  (l) =>
+                                    String(l.id) ===
+                                    String(assignmentData.labourId),
                                 )?.category === "Iron Master"
                               ? "Ironing"
                               : "Embroidery"}
@@ -2953,8 +3058,12 @@ const CompanyDashboard = () => {
                         Object.keys(selectedOrder.pant).length > 0
                           ? "Pant"
                           : ""}
-                        {(!selectedOrder?.shirt || selectedOrder.shirt === '{}' || selectedOrder.shirt === 'null') &&
-                        (!selectedOrder?.pant || selectedOrder.pant === '{}' || selectedOrder.pant === 'null')
+                        {(!selectedOrder?.shirt ||
+                          selectedOrder.shirt === "{}" ||
+                          selectedOrder.shirt === "null") &&
+                        (!selectedOrder?.pant ||
+                          selectedOrder.pant === "{}" ||
+                          selectedOrder.pant === "null")
                           ? "None"
                           : ""}
                       </>
@@ -2994,11 +3103,17 @@ const CompanyDashboard = () => {
                         available)
                       </option>
                       {getFilteredWorkTypes(assignmentData.labourId).map(
-                        (workType) => (
-                          <option key={workType} value={workType}>
-                            {workType}
-                          </option>
-                        ),
+                        (workType) => {
+                          const itemInfo = itemDisplayMap[workType];
+                          const displayLabel = itemInfo
+                            ? `${workType} (${itemInfo.remainingQty} remaining)`
+                            : workType;
+                          return (
+                            <option key={workType} value={workType}>
+                              {displayLabel}
+                            </option>
+                          );
+                        },
                       )}
                     </select>
                   )}
@@ -3006,10 +3121,30 @@ const CompanyDashboard = () => {
 
                 {/* Quantity */}
                 <div style={{ marginBottom: "1rem" }}>
-                  <label className="form-label">Quantity *</label>
+                  <label className="form-label">
+                    Quantity *
+                    {assignmentData.workType &&
+                      itemDisplayMap[assignmentData.workType] && (
+                        <span
+                          style={{
+                            color: "#64748b",
+                            fontSize: "0.85rem",
+                            marginLeft: "0.5rem",
+                          }}
+                        >
+                          (Max:{" "}
+                          {itemDisplayMap[assignmentData.workType].remainingQty}
+                          )
+                        </span>
+                      )}
+                  </label>
                   <input
                     type="number"
                     min="1"
+                    max={
+                      itemDisplayMap[assignmentData.workType]?.remainingQty ||
+                      ""
+                    }
                     value={assignmentData.quantity || ""}
                     onChange={(e) => {
                       const val = e.target.value ? parseInt(e.target.value) : 1;
@@ -3018,6 +3153,25 @@ const CompanyDashboard = () => {
                         quantity: isNaN(val) ? 1 : val,
                       });
                     }}
+                    className="form-input"
+                    disabled={isSubmitting}
+                  />
+                </div>
+
+                {/* Custom Wage (Optional) */}
+                <div style={{ marginBottom: "1rem" }}>
+                  <label className="form-label">Custom Wage (Optional)</label>
+                  <input
+                    type="number"
+                    placeholder="Leave empty to use default wage rate"
+                    step="0.01"
+                    value={assignmentData.customWage || ""}
+                    onChange={(e) =>
+                      setAssignmentData({
+                        ...assignmentData,
+                        customWage: e.target.value,
+                      })
+                    }
                     className="form-input"
                     disabled={isSubmitting}
                   />
@@ -3075,4 +3229,3 @@ const CompanyDashboard = () => {
 };
 
 export default CompanyDashboard;
-
